@@ -38,6 +38,15 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
 #statsPanel{position:fixed;top:110px;right:15px;background:#102544dd;border:1px solid #ffffff55;border-radius:12px;color:#fff;padding:10px 14px;font-size:11px;min-width:130px;z-index:5}
 #statsPanel h3{margin:0 0 6px;font-size:11px;color:#aee5ff}
 #statsPanel div{display:flex;justify-content:space-between;gap:12px}
+#touch{position:fixed;left:0;right:0;bottom:0;display:none;justify-content:space-between;align-items:flex-end;padding:0 14px 86px;z-index:6;pointer-events:none}
+#touch.on{display:flex}
+.tcluster{display:flex;gap:10px;align-items:flex-end}
+.tcol{display:flex;flex-direction:column;gap:10px;align-items:center}
+.trow{display:flex;gap:10px;align-items:center}
+.tbtn{pointer-events:auto;width:62px;height:62px;border-radius:50%;background:#ffffff22;border:2px solid #ffffff88;color:#fff;font-size:20px;font-weight:900;touch-action:none;-webkit-tap-highlight-color:transparent}
+.tbtn.big{width:86px;height:86px;font-size:30px}
+.tbtn:active{background:#7ce2ff66}
+canvas{touch-action:none}
 @media(max-width:600px){.stat{min-width:88px}.stat b{font-size:15px}#controls{font-size:9px}#milestoneBar{width:200px}}
 </style>
 </head>
@@ -62,6 +71,24 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
 <button id="shopBtn">SHOP</button>
 <button id="practiceBtn">PRACTICE: OFF</button>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL • J = JETPACK • F = PARRY • E = SHOP</div>
+<div id="touch">
+  <div class="tcluster">
+    <button class="tbtn" id="tLeft">◀</button>
+    <button class="tbtn" id="tRight">▶</button>
+  </div>
+  <div class="tcluster">
+    <div class="tcol">
+      <div class="trow">
+        <button class="tbtn" id="tJet">🚀</button>
+        <button class="tbtn" id="tFall">⬇</button>
+      </div>
+      <div class="trow">
+        <button class="tbtn" id="tParry">💥</button>
+        <button class="tbtn big" id="tJump">⬆</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="milestoneText">Next milestone: 100m</div>
 <div id="milestoneBar"><div id="milestoneFill"></div></div>
 <div id="toast"></div>
@@ -526,6 +553,23 @@ addEventListener("keydown",e=>{
   if(e.key.toLowerCase()==="f"&&!e.repeat)tryParry();
 });
 addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+// Touch controls for phones/tablets
+if('ontouchstart' in window||navigator.maxTouchPoints>0){
+  $("touch").classList.add("on");
+  const hold=(id,down,up)=>{
+    const el=$(id);
+    el.addEventListener("touchstart",e=>{e.preventDefault();initAudio();down()},{passive:false});
+    el.addEventListener("touchend",e=>{e.preventDefault();if(up)up()},{passive:false});
+    el.addEventListener("touchcancel",()=>{if(up)up()});
+  };
+  hold("tLeft",()=>keys.a=true,()=>keys.a=false);
+  hold("tRight",()=>keys.d=true,()=>keys.d=false);
+  hold("tJet",()=>keys.j=true,()=>keys.j=false);
+  hold("tFall",()=>keys.s=true,()=>keys.s=false);
+  hold("tJump",()=>jump());
+  hold("tParry",()=>tryParry());
+}
 
 // ============================== UPDATE ==============================
 const skyDay=new THREE.Color(0x72c9ff),skyHigh=new THREE.Color(0x0a1030);
