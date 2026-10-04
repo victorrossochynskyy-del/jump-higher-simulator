@@ -90,7 +90,7 @@ canvas{touch-action:none}
     <p>Owner only. Gifts & messages reach everyone playing.</p>
     <input id="adminInput" placeholder="Type a message to announce..." autocomplete="off">
     <div id="adminLog"></div>
-    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart</p>
+    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe</p>
   </div>
 </div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL • J = JETPACK • F = PARRY • E = SHOP</div>
@@ -167,6 +167,7 @@ function netApply(m){
   else if(m.cmd==="money"&&m.n){const n=Math.max(0,Math.min(1000000,m.n|0));money+=n;save();updateHUD();toast("🎁 Owner gifted +$"+fmt(n)+"!")}
   else if(m.cmd==="power"&&m.n){const n=Math.max(0,Math.min(10000,m.n|0));power+=n;save();updateHUD();toast("⚡ Owner boosted +"+n+" power!")}
   else if(m.cmd==="clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;toast("🧹 Owner cleared the skies!")}
+  else if(m.cmd==="wipe"){fullWipe();bigAnnounce("💥 Owner wiped all progress! Fresh start!");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
   else if(m.cmd==="restart"){bigAnnounce("🔄 Owner is restarting the game...");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
 }
 let saved=JSON.parse(localStorage.getItem("jumpHigherSave3D")||"null")||{
@@ -616,6 +617,13 @@ $("practiceBtn").onclick=()=>{
 // ---- Owner admin panel ----
 let isAdmin=localStorage.getItem("jh_admin")==="1";
 let adminPass=localStorage.getItem("jh_pass")||"owner123";
+let wipeArmed=0;
+function fullWipe(){
+  money=0;best=0;power=10;rebirths=0;combo=0;
+  saved.feather=saved.jetpack=saved.magnet=saved.cloud=saved.doubleJump=false;
+  try{groundStreak=0;totalJumps=0;totalBirdsHit=0;maxCombo=0;parries=0;jumpsUsed=0}catch(e){}
+  save();updateHUD();
+}
 $("adminBtn").onclick=()=>{
   if(!isAdmin){
     const p=prompt("Enter owner password:");
@@ -643,6 +651,14 @@ $("adminInput").addEventListener("keydown",e=>{
   else if(cmd==="/combo"){combo=parseInt(arg)||0;updateHUD();adminSay("Combo x"+combo)}
   else if(cmd==="/clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;const sent=netSend("clear",{});adminSay(sent?"Skies cleared for everyone!":"Skies cleared (offline - local only)")}
   else if(cmd==="/restart"){const sent=netSend("restart",{});if(sent){bigAnnounce("🔄 Restarting everyone's game...");setTimeout(()=>location.reload(),2500);adminSay("Restarting everyone...")}else adminSay("Restart failed (offline - local only)")}
+  else if(cmd==="/wipe"){
+    if(Date.now()-(wipeArmed||0)<10000){
+      wipeArmed=0;fullWipe();
+      const sent=netSend("wipe",{});
+      if(sent){bigAnnounce("💥 Wiping everyone's progress...");setTimeout(()=>location.reload(),2500);adminSay("Wiped everyone. Fresh start!")}
+      else{adminSay("Wiped locally (offline)");setTimeout(()=>location.reload(),1500)}
+    }else{wipeArmed=Date.now();adminSay("⚠️ Type /wipe again within 10s to erase EVERYONE's money, power and upgrades!")}
+  }
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
   else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
   else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();const sent=netSend("announce",{text:msg||v});adminSay("Announced: "+(msg||v)+(sent?" (sent to everyone!)":" (offline - local only)"))}
