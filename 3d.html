@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Jump Higher Simulator 3D</title>
+<script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 *{box-sizing:border-box}
@@ -67,6 +68,7 @@ canvas{touch-action:none}
   <div class="stat"><small>MONEY</small><b id="money">$0</b></div>
   <div class="stat"><small>JUMP POWER</small><b id="power">10</b></div>
   <div class="stat"><small>COMBO</small><b id="combo">x0</b></div>
+  <div class="stat"><small>LINK</small><b id="netDot">…</b></div>
 </div>
 
 <div id="statsPanel">
@@ -85,7 +87,7 @@ canvas{touch-action:none}
   <div class="panel">
     <button id="closeAdmin">×</button>
     <h1>🔧 Admin Panel</h1>
-    <p>Owner only. Type a command, press Enter.</p>
+    <p>Owner only. Gifts & messages reach everyone playing.</p>
     <input id="adminInput" placeholder="Type a message to announce..." autocomplete="off">
     <div id="adminLog"></div>
     <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass</p>
@@ -130,6 +132,42 @@ canvas{touch-action:none}
 <script>
 // ============================== STATE ==============================
 const $=id=>document.getElementById(id);
+
+// ---- Online sync: owner broadcasts reach every open game ----
+const NET_TOPIC="jhsim/7f3a9c2e1b04/admin";
+const NET_KEY="k8v2n5q7w3e1r9t0y4u";
+const myNetId="c"+Math.random().toString(36).slice(2,10);
+let netClient=null,netLive=false;
+function netDot(){const d=$("netDot");if(d)d.textContent=netLive?"🟢 LIVE":"🔴 OFF";}
+function netInit(){
+  netDot();
+  if(typeof mqtt==="undefined")return;
+  const urls=["wss://broker.hivemq.com:8884/mqtt","wss://broker.emqx.io:8084/mqtt"];
+  let ui=0;
+  try{
+    netClient=mqtt.connect(urls[ui],{connectTimeout:8000,reconnectPeriod:5000,clientId:myNetId+"_"+Date.now().toString(36)});
+    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}netDot()});
+    netClient.on("reconnect",()=>{ui=(ui+1)%urls.length});
+    netClient.on("close",()=>{netLive=false;netDot()});
+    netClient.on("error",()=>{});
+    netClient.on("message",(t,buf)=>{
+      let m;try{m=JSON.parse(buf.toString())}catch(e){return}
+      if(!m||m.key!==NET_KEY||m.from===myNetId)return;
+      netApply(m);
+    });
+  }catch(e){}
+}
+function netSend(cmd,obj){
+  if(!netClient||!netLive)return false;
+  try{netClient.publish(NET_TOPIC,JSON.stringify(Object.assign({v:1,from:myNetId,key:NET_KEY,cmd:cmd},obj||{})));return true}
+  catch(e){return false}
+}
+function netApply(m){
+  if(m.cmd==="announce"&&m.text){bigAnnounce(String(m.text).slice(0,120));playMilestoneSound();toast("📢 "+String(m.text).slice(0,60))}
+  else if(m.cmd==="money"&&m.n){const n=Math.max(0,Math.min(1000000,m.n|0));money+=n;save();updateHUD();toast("🎁 Owner gifted +$"+fmt(n)+"!")}
+  else if(m.cmd==="power"&&m.n){const n=Math.max(0,Math.min(10000,m.n|0));power+=n;save();updateHUD();toast("⚡ Owner boosted +"+n+" power!")}
+  else if(m.cmd==="clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;toast("🧹 Owner cleared the skies!")}
+}
 let saved=JSON.parse(localStorage.getItem("jumpHigherSave3D")||"null")||{
   money:0,best:0,power:10,rebirths:0,
   feather:false,jetpack:false,magnet:false,cloud:false,doubleJump:false
@@ -597,15 +635,15 @@ $("adminInput").addEventListener("keydown",e=>{
   const v=e.target.value.trim();e.target.value="";
   if(!v)return;
   const sp=v.indexOf(" "),cmd=sp<0?v:v.slice(0,sp),arg=sp<0?"":v.slice(sp+1);
-  if(cmd==="/announce"){const msg=(arg||"").trim();if(msg){bigAnnounce(msg);playMilestoneSound();adminSay("Announced: "+msg)}else adminSay("Type a message after /announce")}
-  else if(v[0]!=="/"){bigAnnounce(v);playMilestoneSound();adminSay("Announced: "+v)}
-  else if(cmd==="/money"){money+=parseInt(arg)||0;save();updateHUD();adminSay("Money +"+arg)}
-  else if(cmd==="/power"){power+=parseInt(arg)||0;save();updateHUD();adminSay("Power +"+arg)}
+  if(cmd==="/announce"){const msg=(arg||"").trim();if(msg){bigAnnounce(msg);playMilestoneSound();const sent=netSend("announce",{text:msg});adminSay("Announced: "+msg+(sent?" (sent to everyone!)":" (offline - local only)"))}else adminSay("Type a message after /announce")}
+  else if(v[0]!=="/"){bigAnnounce(v);playMilestoneSound();const sent=netSend("announce",{text:v});adminSay("Announced: "+v+(sent?" (sent to everyone!)":" (offline - local only)"))}
+  else if(cmd==="/money"){const n=parseInt(arg)||0;money+=n;save();updateHUD();const sent=netSend("money",{n:n});adminSay("Money +"+n+(sent?" (everyone got it!)":" (offline - local only)"))}
+  else if(cmd==="/power"){const n=parseInt(arg)||0;power+=n;save();updateHUD();const sent=netSend("power",{n:n});adminSay("Power +"+n+(sent?" (everyone got it!)":" (offline - local only)"))}
   else if(cmd==="/combo"){combo=parseInt(arg)||0;updateHUD();adminSay("Combo x"+combo)}
-  else if(cmd==="/clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;adminSay("Fireballs cleared")}
+  else if(cmd==="/clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;const sent=netSend("clear",{});adminSay(sent?"Skies cleared for everyone!":"Skies cleared (offline - local only)")}
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
   else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
-  else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();adminSay("Announced: "+(msg||v))}
+  else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();const sent=netSend("announce",{text:msg||v});adminSay("Announced: "+(msg||v)+(sent?" (sent to everyone!)":" (offline - local only)"))}
 });
 
 // ============================== INPUT ==============================
@@ -759,6 +797,7 @@ function loop(now){
   renderer.render(scene,camera);
   requestAnimationFrame(loop);
 }
+netInit();
 requestAnimationFrame(loop);
 </script>
 </body>
