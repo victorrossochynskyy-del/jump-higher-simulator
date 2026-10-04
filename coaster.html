@@ -271,22 +271,36 @@ for(let c=0;c<4;c++){
 train.forEach(t=>t.visible=false);
 
 // ============================== RIDE STATE ==============================
-let built=null,riding=false,s=0,v=0,rideT=0,camMode=0,bank=0,clackAcc=0,liftAcc=0,lastScream=0,maxG=0;
-const _m4=new THREE.Matrix4(),_p=new THREE.Vector3(),_x=new THREE.Vector3(),_y=new THREE.Vector3(),_up=new THREE.Vector3(),_t=new THREE.Vector3();
+let built=null,riding=false,s=0,v=0,rideT=0,camMode=0,bank=0,clackAcc=0,liftAcc=0,lastScream=0,maxG=0,gSmooth=1,camSnap=true;
+const _m4=new THREE.Matrix4(),_p=new THREE.Vector3(),_x=new THREE.Vector3(),_y=new THREE.Vector3(),_up=new THREE.Vector3(),_t=new THREE.Vector3(),_ta=new THREE.Vector3(),_tb=new THREE.Vector3(),_tl=new THREE.Vector3(),camP=new THREE.Vector3(0,30,60),camL=new THREE.Vector3(0,8,-110);
 
+function posAt(sDist,out){
+  const N=built.N;let f=((sDist/built.L)*N)%N;if(f<0)f+=N;
+  const i0=Math.floor(f),fr=f-i0,i1=(i0+1)%N;
+  return out.copy(built.spaced[i0]).lerp(built.spaced[i1],fr);
+}
 function sampleAt(sDist){
-  const N=built.N,f=((sDist/built.L)*N)%N, i0=Math.floor(f),fr=f-i0,i1=(i0+1)%N;
-  _p.copy(built.spaced[i0]).lerp(built.spaced[i1],fr);
-  _t.copy(built.T[i0]).lerp(built.T[i1],fr).normalize();
+  posAt(sDist,_p);
+  // wide-baseline tangent (±2.5m) so the facing doesn't jitter on rough spots
+  posAt(sDist+2.5,_ta);posAt(sDist-2.5,_tb);
+  _t.copy(_ta).sub(_tb).normalize();
+  const N=built.N;let f=((sDist/built.L)*N)%N;if(f<0)f+=N;
+  const i0=Math.floor(f),fr=f-i0,i1=(i0+1)%N;
   _up.copy(built.UP[i0]).lerp(built.UP[i1],fr).normalize();
   return i0;
+}
+function slopeAt(sDist){
+  const N=built.N;let f=((sDist/built.L)*N)%N;if(f<0)f+=N;
+  const i0=Math.floor(f);
+  const a=built.spaced[(i0-4+N)%N],b=built.spaced[(i0+4)%N];
+  return (b.y-a.y)/(8*built.ds);
 }
 function startRide(def){
   initAudio();
   if(built&&built.group.parent)scene.remove(built.group);
   built=buildCoaster(def);
   scene.add(built.group);
-  s=0;v=0;rideT=0;bank=0;maxG=0;
+  s=0;v=0;rideT=0;bank=0;maxG=0;camSnap=true;gSmooth=1;
   train.forEach(t=>t.visible=true);
   riding=true;
   $("menu").classList.add("hidden");
@@ -320,23 +334,26 @@ function loop(now){
     camera.lookAt(0,8,-110);
     renderer.render(scene,camera);return;
   }
-  // --- physics along track ---
-  const i0=sampleAt(s);
-  const ahead=built.spaced[(i0+5)%built.N],behind=built.spaced[(i0-5+built.N)%built.N];
-  const dyds=(ahead.y-behind.y)/(10*built.ds);
-  v+=(-9.81*dyds-0.02*v-0.3)*dt;
-  if(s<built.sLift)v=Math.max(v,9);      // chain lift
-  v=Math.max(4,Math.min(46,v));          // no rollback, top speed
-  s=(s+v*dt)%built.L;
+  // --- physics along track (substepped so steep drops stay stable) ---
+  const steps=Math.max(1,Math.ceil(dt/.008)),h=dt/steps;
+  for(let st=0;st<steps;st++){
+    const dyds=slopeAt(s);
+    v+=(-9.81*dyds-0.02*v-0.3)*h;
+    if(s<built.sLift)v=Math.max(v,9);      // chain lift
+    v=Math.max(4,Math.min(46,v));          // no rollback, top speed
+    s=(s+v*h)%built.L;
+  }
   rideT+=dt;
-  // banking from lateral curvature
-  const iA=(i0-3+built.N)%built.N,iB=(i0+3)%built.N;
-  const lat=built.T[iB].clone().sub(built.T[iA]).dot(built.SIDE[i0])/(6*built.ds);
+  const i0=sampleAt(s);
+  // banking from lateral curvature (wide baseline = no twitching)
+  const iA=(i0-12+built.N)%built.N,iB=(i0+12)%built.N;
+  const lat=built.T[iB].clone().sub(built.T[iA]).dot(built.SIDE[i0])/(24*built.ds);
   const bankT=Math.max(-1.05,Math.min(1.05,Math.atan(v*v*lat/9.81)));
   bank+=(bankT-bank)*Math.min(1,dt*4);
-  // g-force estimate
-  const k=built.T[iA].angleTo(built.T[iB])/(6*built.ds);
+  // g-force estimate (smoothed for the HUD)
+  const k=built.T[iA].angleTo(built.T[iB])/(24*built.ds);
   const g=1+v*v*k/9.81;if(g>maxG)maxG=g;
+  gSmooth+=(g-gSmooth)*Math.min(1,dt*6);
   // --- train cars ---
   const gap=3.4;
   for(let c=0;c<train.length;c++){
@@ -349,16 +366,22 @@ function loop(now){
     train[c].quaternion.setFromRotationMatrix(_m4);
     train[c].position.copy(_p).addScaledVector(upR,.9);
   }
-  // --- camera ---
+  // --- camera (damped so bumps don't whip your view) ---
   sampleAt(s);
-  const headP=_p.clone().addScaledVector(_up,2.3);
+  _tb.copy(_p).addScaledVector(_up,2.3); // rider head
+  const lookDist=12+v*.4;
   if(camMode===0){
-    camera.position.copy(headP);
-    camera.lookAt(_p.clone().addScaledVector(_t,12).addScaledVector(_up,.5));
+    _ta.copy(_tb);
+    _tl.copy(_p).addScaledVector(_t,lookDist).addScaledVector(_up,.5);
   }else{
-    camera.position.copy(_p).addScaledVector(_t,-10).addScaledVector(_up,4.5);
-    camera.lookAt(_p.clone().addScaledVector(_up,1));
+    _ta.copy(_p).addScaledVector(_t,-10-v*.15).addScaledVector(_up,4.5);
+    _tl.copy(_p).addScaledVector(_up,1).addScaledVector(_t,6);
   }
+  if(camSnap){camP.copy(_ta);camL.copy(_tl);camSnap=false}
+  camP.lerp(_ta,1-Math.exp(-dt*7));
+  camL.lerp(_tl,1-Math.exp(-dt*10));
+  camera.position.copy(camP);
+  camera.lookAt(camL);
   // --- sounds ---
   if(windGain){
     const w=soundOn?Math.min(.5,(v/46)*(v/46)*.6):0;
@@ -372,7 +395,7 @@ function loop(now){
   // --- HUD ---
   $("speed").textContent=Math.round(v*3.6)+" km/h";
   $("cheight").textContent=Math.round(_p.y)+"m";
-  $("gforce").textContent=g.toFixed(1)+"g";
+  $("gforce").textContent=gSmooth.toFixed(1)+"g";
   $("rtime").textContent=Math.round(rideT)+"s";
   renderer.render(scene,camera);
 }
