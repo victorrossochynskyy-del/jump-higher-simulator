@@ -180,6 +180,16 @@ let birds=[],fireballs=[],bursts=[],rings=[],lastBirdId=0;
 let totalJumps=0,totalBirdsHit=0,maxCombo=0,parries=0;
 let jumpsUsed=0,groundStreak=0,jumpHeld=false;
 let parryCooldown=0,parryFlash=0,parryRing=null;
+let fireballTimer=0,dangerZone=-1,zone=0; // 0=fire zone, 1=purple void (10k), 2=dark ghosts (20k)
+function zoneFor(h){return h>=20000?2:h>=10000?1:0}
+function checkZone(){
+  const z=zoneFor(height);
+  if(z>zone){
+    zone=z;
+    if(z===1){toast("🟣 VOID ZONE - PURPLE METEORS!");playMilestoneSound()}
+    if(z===2){toast("⚫ DARK VOID - GHOST METEORS!");playMilestoneSound()}
+  }else zone=z;
+}
 let milestones=[100,500,1000,5000,10000,50000,100000,1000000],milestoneIdx=0;
 let jumpSquash=0;
 
@@ -373,23 +383,25 @@ for(let i=0;i<40;i++){
 }
 
 // ============================== FIREBALLS ==============================
-function fireTexture(){
+function fireTexture(stops,blob){
   const cv=document.createElement("canvas");cv.width=cv.height=128;
   const c=cv.getContext("2d");
   const g=c.createRadialGradient(64,64,4,64,64,64);
-  g.addColorStop(0,"#fff8e0");g.addColorStop(.3,"#ffcc33");
-  g.addColorStop(.6,"#ff6611");g.addColorStop(1,"#7a0d00");
+  g.addColorStop(0,stops[0]);g.addColorStop(.3,stops[1]);
+  g.addColorStop(.6,stops[2]);g.addColorStop(1,stops[3]);
   c.fillStyle=g;c.fillRect(0,0,128,128);
   // mottled flame blobs
   for(let i=0;i<40;i++){
-    c.fillStyle=`rgba(255,${100+Math.random()*120|0},20,${.12+Math.random()*.2})`;
+    c.fillStyle=blob();
     c.beginPath();
     c.arc(20+Math.random()*88,20+Math.random()*88,4+Math.random()*12,0,7);
     c.fill();
   }
   const t=new THREE.CanvasTexture(cv);return t;
 }
-const fireTex=fireTexture();
+const fireTex=fireTexture(["#fff8e0","#ffcc33","#ff6611","#7a0d00"],()=>`rgba(255,${100+Math.random()*120|0},20,${.12+Math.random()*.2})`);
+const voidTex=fireTexture(["#f5e6ff","#cc66ff","#9933ff","#2a0050"],()=>`rgba(${180+Math.random()*60|0},${80+Math.random()*60|0},255,${.12+Math.random()*.2})`);
+const ghostTex=fireTexture(["#ffffff","#e0f0ff","#a0c8ff","#3a6ab0"],()=>`rgba(200,225,255,${.12+Math.random()*.2})`);
 const glowTex=(()=>{
   const cv=document.createElement("canvas");cv.width=cv.height=128;
   const c=cv.getContext("2d");
@@ -401,17 +413,20 @@ const glowTex=(()=>{
 })();
 function spawnFireball(){
   const side=Math.random()<.5?-1:1;
+  const zt=zoneFor(height);
+  const type=zt===2?"ghost":zt===1?"void":"fire";
   const grp=new THREE.Group();
   const core=new THREE.Mesh(
     new THREE.SphereGeometry(.8,16,14),
-    new THREE.MeshBasicMaterial({map:fireTex})
+    new THREE.MeshBasicMaterial({map:type==="ghost"?ghostTex:type==="void"?voidTex:fireTex})
   );
   grp.add(core);
-  const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
-  halo.scale.set(4,4,1);grp.add(halo);
+  const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:type==="ghost"?0xd8ecff:type==="void"?0xcc66ff:0xffffff,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
+  halo.scale.set(type==="ghost"?5:4,type==="ghost"?5:4,1);grp.add(halo);
   grp.position.set(x+side*22,y+1+(Math.random()-.5)*8,0);
   scene.add(grp);
-  fireballs.push({mesh:grp,vx:0,vy:0,speed:(8+Math.random()*5+height*.004)*(touchMode?.7:1),r:.9,life:8,flick:Math.random()*6});
+  const spd=type==="ghost"?1.8:type==="void"?1.4:1;
+  fireballs.push({mesh:grp,type,vx:0,vy:0,speed:(8+Math.random()*5+height*.004)*(touchMode?.7:1)*spd,r:type==="ghost"?.7:.9,life:8,flick:Math.random()*6});
   // Warning siren so you hear it coming (even on phones)
   playTone(220,.15,"sawtooth",.14);
   setTimeout(()=>playTone(180,.2,"sawtooth",.14),120);
@@ -428,13 +443,13 @@ function explodeFireball(f,perfect){
     vel.push([Math.cos(a)*sp,Math.sin(a)*sp]);
   }
   geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
-  const pts=new THREE.Points(geo,new THREE.PointsMaterial({color:perfect?0xffdd55:0xff7711,size:.5,transparent:true,opacity:1}));
+  const pts=new THREE.Points(geo,new THREE.PointsMaterial({color:f.type==="ghost"?0xffffff:f.type==="void"?0xcc66ff:(perfect?0xffdd55:0xff7711),size:.5,transparent:true,opacity:1}));
   scene.add(pts);
   bursts.push({pts,vel,life:1});
   // shockwave ring
   const ring=new THREE.Mesh(
     new THREE.RingGeometry(.9,1.15,40),
-    new THREE.MeshBasicMaterial({color:0xffdd55,transparent:true,opacity:.95,side:THREE.DoubleSide})
+    new THREE.MeshBasicMaterial({color:f.type==="ghost"?0xffffff:f.type==="void"?0xcc66ff:0xffdd55,transparent:true,opacity:.95,side:THREE.DoubleSide})
   );
   ring.position.copy(f.mesh.position);
   scene.add(ring);
@@ -457,11 +472,12 @@ function updateFireballs(dt){
     if(dist<1.4+f.r){
       f.life=0;
       combo=0;
-      const penalty=Math.floor(money*.1);
+      const rate=f.type==="ghost"?.2:f.type==="void"?.15:.1;
+      const penalty=Math.floor(money*rate);
       money=Math.max(0,money-penalty);
       if(!practice)save();
       updateHUD();
-      toast("🔥 HIT! -$"+fmt(penalty));
+      toast((f.type==="ghost"?"⚪ GHOST HIT! -$":f.type==="void"?"🟣 VOID HIT! -$":"🔥 HIT! -$")+fmt(penalty));
       playTone(100,.4,"sawtooth",.2);
       explodeFireball(f,false);
       vy=-15;
@@ -720,7 +736,7 @@ function update(dt){
   height=Math.max(0,y);
   if(height>best){best=height;if(!practice)save()}
   cameraY=Math.max(0,height-8);
-  ensureBirds();syncBirdMeshes();checkMilestones();
+  ensureBirds();syncBirdMeshes();checkMilestones();checkZone();
 
   parryCooldown=Math.max(0,parryCooldown-dt);
   parryFlash=Math.max(0,parryFlash-dt*3);
@@ -755,9 +771,16 @@ function update(dt){
 
   if(!practice&&height>10&&Math.random()<dt*.05)addMoney(Math.max(1,height*.04));
 
+  // Fireballs spawn at high altitude - fair gap, harder tiers higher up
+  fireballTimer-=dt;
   if(height>200){
-    const fireRate=Math.min(.8,(height-200)/3000);
-    if(Math.random()<dt*fireRate)spawnFireball();
+    const tier=zoneFor(height);
+    const maxAlive=tier===2?3:tier===1?2:1;
+    const gap=Math.max(tier===2?.9:1.4,(3.2-(height-200)/2500)*(tier===2?.55:tier===1?.75:1));
+    if(fireballTimer<=0&&fireballs.length<maxAlive){
+      spawnFireball();
+      fireballTimer=gap;
+    }
   }
   updateFireballs(dt);
 
@@ -784,6 +807,15 @@ function update(dt){
   scene.background.copy(skyDay).lerp(skyHigh,t);
   scene.fog.color.copy(fogDay).lerp(fogHigh,t);
   const danger=height>150?Math.min(.85,(height-150)/2000):0;
+  const dz=zoneFor(height);
+  if(dz!==dangerZone){
+    dangerZone=dz;
+    $("danger").style.background=dz===2
+      ?"radial-gradient(ellipse at center,rgba(10,0,25,.55) 0%,rgba(0,0,5,.93) 100%)"
+      :dz===1
+      ?"radial-gradient(ellipse at center,rgba(128,0,255,0) 25%,rgba(90,0,160,.9) 100%)"
+      :"radial-gradient(ellipse at center,rgba(255,0,0,0) 30%,rgba(200,0,0,.85) 100%)";
+  }
   $("danger").style.opacity=(danger*(1+Math.sin(performance.now()*.005)*.12)).toFixed(3);
   $("warn").style.display=fireballs.length?"block":"none";
 
