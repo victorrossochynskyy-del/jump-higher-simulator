@@ -88,7 +88,7 @@ canvas{touch-action:none}
     <p>Owner only. Gifts & messages reach everyone playing.</p>
     <input id="adminInput" placeholder="Type a message to announce..." autocomplete="off">
     <div id="adminLog"></div>
-    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass</p>
+    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart</p>
   </div>
 </div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL FASTER • J = JETPACK • F = PARRY • E = SHOP</div>
@@ -164,6 +164,7 @@ function netApply(m){
   else if(m.cmd==="money"&&m.n){const n=Math.max(0,Math.min(1000000,m.n|0));money+=n;save();updateHUD();toast("🎁 Owner gifted +$"+fmt(n)+"!")}
   else if(m.cmd==="power"&&m.n){const n=Math.max(0,Math.min(10000,m.n|0));power+=n;save();updateHUD();toast("⚡ Owner boosted +"+n+" power!")}
   else if(m.cmd==="clear"){fireballs.length=0;toast("🧹 Owner cleared the skies!")}
+  else if(m.cmd==="restart"){bigAnnounce("🔄 Owner is restarting the game...");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
 }
 let W=innerWidth,H=innerHeight,dpr=1;
 
@@ -404,6 +405,7 @@ $("adminInput").addEventListener("keydown",e=>{
   else if(cmd==="/power"){const n=parseInt(arg)||0;power+=n;save();updateHUD();const sent=netSend("power",{n:n});adminSay("Power +"+n+(sent?" (everyone got it!)":" (offline - local only)"))}
   else if(cmd==="/combo"){combo=parseInt(arg)||0;updateHUD();adminSay("Combo x"+combo)}
   else if(cmd==="/clear"){fireballs.length=0;const sent=netSend("clear",{});adminSay(sent?"Skies cleared for everyone!":"Skies cleared (offline - local only)")}
+  else if(cmd==="/restart"){const sent=netSend("restart",{});if(sent){bigAnnounce("🔄 Restarting everyone's game...");setTimeout(()=>location.reload(),2500);adminSay("Restarting everyone...")}else adminSay("Restart failed (offline - local only)")}
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
   else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
   else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();const sent=netSend("announce",{text:msg||v});adminSay("Announced: "+(msg||v)+(sent?" (sent to everyone!)":" (offline - local only)"))}
