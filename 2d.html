@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Jump Higher Simulator</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#72c9ff}
+body{user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;top:14px;left:14px;display:flex;gap:8px;flex-wrap:wrap;max-width:800px}
+.stat{padding:8px 12px;min-width:105px;background:#102544dd;border:1px solid #ffffff55;border-radius:12px;color:#fff;box-shadow:0 5px 15px #0004}
+.stat small{display:block;color:#aee5ff;font-size:10px;font-weight:bold}
+.stat b{font-size:19px}
+button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
+#shopBtn,#practiceBtn{position:fixed;right:15px;color:white;background:#142b50;padding:12px 18px;box-shadow:0 5px 15px #0005}
+#shopBtn{top:15px}
+#practiceBtn{top:62px}
+#controls{position:fixed;bottom:13px;left:50%;transform:translateX(-50%);background:#102544dd;color:#fff;padding:8px 13px;border-radius:10px;font-size:12px;white-space:nowrap}
+#toast{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);font-size:30px;font-weight:900;color:white;text-shadow:0 4px 10px #000;opacity:0;pointer-events:none;transition:opacity .3s}
+#milestoneBar{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);width:280px;height:18px;background:#0006;border-radius:9px;overflow:hidden;border:1px solid #ffffff44}
+#milestoneFill{height:100%;background:linear-gradient(90deg,#7ce2ff,#a64dff);width:0%;transition:width .3s}
+#milestoneText{position:fixed;bottom:72px;left:50%;transform:translateX(-50%);color:#fff;font-size:11px;font-weight:bold;text-shadow:0 2px 4px #000;pointer-events:none}
+#comboPopup{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);font-size:22px;font-weight:900;color:#7ce2ff;text-shadow:0 3px 8px #000;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+#shop{position:fixed;inset:0;background:#0008;display:grid;place-items:center}
+#shop.hidden{display:none}
+.panel{width:min(530px,92vw);max-height:88vh;overflow:auto;background:linear-gradient(#17345d,#09172e);color:white;border-radius:22px;padding:24px;position:relative;box-shadow:0 20px 70px #000}
+.panel h1{margin:0 0 4px}.panel p{color:#b8cce4}
+#closeShop{position:absolute;right:12px;top:12px;background:#405779;color:white;font-size:24px;width:38px;height:38px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#ffffff12;padding:12px;margin:8px 0;border-radius:13px}
+.item h3{margin:0 0 3px}.item p{margin:0;font-size:12px}
+.item button{background:#7ce2ff;padding:9px 13px;white-space:nowrap}
+.item button:disabled{opacity:.4;cursor:not-allowed}
+#rebirth{width:100%;padding:14px;background:#a64dff;color:white;font-size:15px;margin-top:8px}
+#statsPanel{position:fixed;top:110px;right:15px;background:#102544dd;border:1px solid #ffffff55;border-radius:12px;color:#fff;padding:10px 14px;font-size:11px;min-width:130px}
+#statsPanel h3{margin:0 0 6px;font-size:11px;color:#aee5ff}
+#statsPanel div{display:flex;justify-content:space-between;gap:12px}
+@media(max-width:600px){.stat{min-width:88px}.stat b{font-size:15px}#controls{font-size:9px}#milestoneBar{width:200px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="stat"><small>HEIGHT</small><b id="height">0m</b></div>
+  <div class="stat"><small>BEST</small><b id="best">0m</b></div>
+  <div class="stat"><small>MONEY</small><b id="money">$0</b></div>
+  <div class="stat"><small>JUMP POWER</small><b id="power">10</b></div>
+  <div class="stat"><small>COMBO</small><b id="combo">x0</b></div>
+</div>
+
+<div id="statsPanel">
+  <h3>STATS</h3>
+  <div><span>Jumps</span><b id="totalJumps">0</b></div>
+  <div><span>Birds Hit</span><b id="totalBirds">0</b></div>
+  <div><span>Max Combo</span><b id="maxCombo">0</b></div>
+</div>
+
+<button id="shopBtn">SHOP</button>
+<button id="practiceBtn">PRACTICE: OFF</button>
+<div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL FASTER • J = JETPACK • F = PARRY • E = SHOP</div>
+<div id="milestoneText">Next milestone: 100m</div>
+<div id="milestoneBar"><div id="milestoneFill"></div></div>
+<div id="toast"></div>
+<div id="comboPopup"></div>
+
+<div id="shop" class="hidden">
+  <div class="panel">
+    <button id="closeShop">×</button>
+    <h1>🛒 Jump Shop</h1>
+    <p>Upgrade your jump and buy special abilities. Each bounce goes higher the longer your combo!</p>
+    <div id="items"></div>
+    <button id="rebirth">REBIRTH<br><small>Reach 10,000m — permanently boosts all earnings by 2x</small></button>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const $=id=>document.getElementById(id);
+let W=innerWidth,H=innerHeight,dpr=1;
+
+function resize(){
+  W=innerWidth;H=innerHeight;dpr=Math.min(devicePixelRatio||1,2);
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  canvas.style.width=W+"px";canvas.style.height=H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resize);resize();
+
+const keys={};
+addEventListener("keydown",e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(e.code==="Space"){e.preventDefault();jump()}
+  if(e.key.toLowerCase()==="e")$("shop").classList.toggle("hidden");
+  if(e.key.toLowerCase()==="f"&&!e.repeat)tryParry();
+});
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+let saved=JSON.parse(localStorage.getItem("jumpHigherSave")||"null")||{
+  money:0,best:0,power:10,rebirths:0,
+  feather:false,jetpack:false,magnet:false,cloud:false,doubleJump:false
+};
+let money=saved.money,best=saved.best,power=saved.power,rebirths=saved.rebirths;
+let height=0,x=0,y=0,vx=0,vy=0,cameraY=0,combo=0,practice=false;
+let birds=[],particles=[],clouds=[],fireballs=[],lastBirdId=0,last=performance.now(),jumpHeld=false;
+let totalJumps=0,totalBirdsHit=0,maxCombo=0;
+let jumpsUsed=0; // for double jump
+let groundStreak=0; // every ground jump goes higher than the last
+let milestones=[100,500,1000,5000,10000,50000,100000,1000000];
+let milestoneIdx=0;
+let jumpSquash=0; // visual squash effect
+let trailPoints=[]; // jump trail
+let parryCooldown=0,parryFlash=0,parries=0;
+let fireballTimer=0; // minimum gap between fireball spawns
+let shockwaves=[]; // expanding parry rings
+
+// Simple audio system
+let audioCtx=null;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playTone(freq,dur,type="square",vol=.15){
+  if(!audioCtx)return;
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+dur);
+}
+function playJumpSound(){playTone(300,.12,"square",.12);setTimeout(()=>playTone(500,.1,"square",.1),50)}
+function playBounceSound(){playTone(400,.15,"triangle",.15);setTimeout(()=>playTone(600,.12,"triangle",.12),60)}
+function playBuySound(){playTone(800,.2,"sine",.15);setTimeout(()=>playTone(1000,.15,"sine",.12),80)}
+function playMilestoneSound(){playTone(523,.15,"sine",.15);setTimeout(()=>playTone(659,.15,"sine",.15),120);setTimeout(()=>playTone(784,.2,"sine",.15),240)}
+
+function save(){
+  localStorage.setItem("jumpHigherSave",JSON.stringify({
+    money,best,power,rebirths,
+    feather:saved.feather,jetpack:saved.jetpack,
+    magnet:saved.magnet,cloud:saved.cloud,doubleJump:saved.doubleJump
+  }));
+}
+function fmt(n){return Math.floor(n).toLocaleString()}
+function toast(t){
+  $("toast").textContent=t;$("toast").style.opacity=1;
+  clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").style.opacity=0,900);
+}
+function comboPopup(t){
+  $("comboPopup").textContent=t;$("comboPopup").style.opacity=1;
+  $("comboPopup").style.transform="translate(-50%,-50%) scale(1.2)";
+  setTimeout(()=>{$("comboPopup").style.opacity=0;$("comboPopup").style.transform="translate(-50%,-50%) scale(1)"},400);
+}
+function updateHUD(){
+  $("height").textContent=fmt(height)+"m";
+  $("best").textContent=fmt(best)+"m";
+  $("money").textContent="$"+fmt(money);
+  $("power").textContent=fmt(power);
+  $("combo").textContent="x"+combo;
+  $("totalJumps").textContent=fmt(totalJumps);
+  $("totalBirds").textContent=fmt(totalBirdsHit);
+  $("maxCombo").textContent="x"+maxCombo;
+}
+function addMoney(n){
+  if(practice)return;
+  money+=Math.max(1,Math.floor(n*Math.pow(2,rebirths)));
+  save();updateHUD();
+}
+function groundY(){return H-105}
+function screenY(h){return groundY()-(h-cameraY)*.55}
+
+function makeBird(h){
+  return{
+    id:++lastBirdId,h,
+    x:(Math.random()*2-1)*(220+Math.min(h*.02,380)),
+    vx:(Math.random()-.5)*1.1,
+    type:Math.random()<.06?"gold":Math.random()<.18?"eagle":"small",
+    phase:Math.random()*Math.PI*2
+  };
+}
+function ensureBirds(){
+  const max=Math.max(900,cameraY+H/.55+500);
+  while(!birds.length||birds[birds.length-1].h<max){
+    const lastH=birds.length?birds[birds.length-1].h:8;
+    // Small reachable gaps early, wider gaps higher up
+    const gap=12+Math.random()*14+Math.min(lastH*.01,40);
+    birds.push(makeBird(lastH+gap));
+  }
+}
+ensureBirds();
+for(let i=0;i<30;i++)clouds.push({x:Math.random()*W,y:Math.random()*H,s:30+Math.random()*70});
+
+function jump(){
+  initAudio();
+  if(y<=.01){
+    // EVERY ground jump goes higher than the last:
+    // 1) permanent training gain (+0.3 power per jump)
+    // 2) streak multiplier (+5% per consecutive ground jump)
+    groundStreak++;
+    power+=0.3;
+    const streakBonus=1+groundStreak*.05;
+    vy=(28+power*.9)*streakBonus;
+    combo=0;jumpsUsed=0;jumpSquash=1;totalJumps++;
+    save();
+    toast("JUMP x"+groundStreak+"!");playJumpSound();
+    particle(W/2+x,screenY(y),8);
+  } else if(saved.cloud&&y>300&&vy<0){
+    const comboBonus=1+combo*.15;
+    vy=(30+power*.7)*comboBonus;
+    combo=0;jumpsUsed=0;jumpSquash=1;totalJumps++;
+    toast("CLOUD BOOST!");playJumpSound();
+    particle(W/2+x,screenY(y),12);
+  } else if(saved.doubleJump&&jumpsUsed<1&&vy<0){
+    // Double jump
+    const comboBonus=1+combo*.15;
+    vy=(26+power*.6)*comboBonus;
+    jumpsUsed++;jumpSquash=1;totalJumps++;
+    toast("DOUBLE JUMP!");playJumpSound();
+    particle(W/2+x,screenY(y),10);
+  }
+}
+
+const shopData=[
+  ["spring","Spring Shoes","+5 jump power",100],
+  ["super","Super Shoes","+20 jump power",1000],
+  ["rocket","Rocket Shoes","+100 jump power",10000],
+  ["gravity","Gravity Boots","+500 jump power",100000],
+  ["moon","Moon Shoes","+2,500 jump power",1000000],
+  ["feather","🪶 Feather","Fall slower",2500],
+  ["jetpack","🚀 Jetpack","Press J in the air",25000],
+  ["magnet","🧲 Bird Magnet","Pull nearby birds",75000],
+  ["cloud","☁️ Cloud Board","Bounce in midair",250000],
+  ["doubleJump","🦘 Double Jump","Jump again midair",500000]
+];
+
+function renderShop(){
+  $("items").innerHTML=shopData.map(a=>{
+    const owned=["feather","jetpack","magnet","cloud","doubleJump"].includes(a[0])&&saved[a[0]];
+    return `<div class="item"><div><h3>${a[1]}</h3><p>${a[2]}</p></div>
+    <button ${owned||money<a[3]?"disabled":""} onclick="buy('${a[0]}')">${owned?"OWNED":"$"+a[3].toLocaleString()}</button></div>`;
+  }).join("");
+}
+function buy(type){
+  const costs={spring:100,super:1000,rocket:10000,gravity:100000,moon:1000000,feather:2500,jetpack:25000,magnet:75000,cloud:250000,doubleJump:500000};
+  const c=costs[type];
+  if(money<c){toast("Not enough money!");return}
+  if(["feather","jetpack","magnet","cloud","doubleJump"].includes(type)&&saved[type]){toast("Already owned!");return}
+  money-=c;
+  if(type==="spring")power+=5;
+  if(type==="super")power+=20;
+  if(type==="rocket")power+=100;
+  if(type==="gravity")power+=500;
+  if(type==="moon")power+=2500;
+  if(["feather","jetpack","magnet","cloud","doubleJump"].includes(type))saved[type]=true;
+  save();renderShop();updateHUD();toast("PURCHASED!");playBuySound();
+}
+window.buy=buy;
+
+$("shopBtn").onclick=()=>{$("shop").classList.remove("hidden");renderShop()};
+$("closeShop").onclick=()=>$("shop").classList.add("hidden");
+$("practiceBtn").onclick=()=>{
+  practice=!practice;
+  $("practiceBtn").textContent="PRACTICE: "+(practice?"ON":"OFF");
+  toast(practice?"PRACTICE MODE":"MONEY MODE");
+};
+
+function particle(x,y,n=12,color="#fff"){
+  for(let i=0;i<n;i++)particles.push({
+    x,y,vx:(Math.random()-.5)*5,vy:-Math.random()*5-1,life:1,r:2+Math.random()*4,color
+  });
+}
+function boom(x,y,n=26){
+  const colors=["#fff8e0","#ffcc33","#ff6611","#ff3300","#888"];
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2,sp=1+Math.random()*6;
+    particles.push({
+      x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2,life:1,r:2+Math.random()*5,
+      color:colors[Math.floor(Math.random()*colors.length)]
+    });
+  }
+}
+function landBird(b){
+  combo++;
+  if(combo>maxCombo)maxCombo=combo;
+  const reward=(b.type==="gold"?300:b.type==="eagle"?80:25)*(1+combo*.15);
+  addMoney(reward);
+  // Each bird bounce is more powerful than the last!
+  const comboBonus=1+combo*.18;
+  const base=b.type==="gold"?36+power*1.0:b.type==="eagle"?33+power*.9:32+power*.9;
+  vy=base*comboBonus;
+  y=b.h+3;
+  jumpSquash=1;totalBirdsHit++;
+  if(combo>=3)comboPopup("COMBO x"+combo+"!");
+  toast(b.type==="gold"?"⭐ GOLDEN BIRD!":"🐦 BIRD BOUNCE!");
+  playBounceSound();
+  particle(W/2+x,screenY(y),18);
+}
+
+function spawnFireball(){
+  const side=Math.random()<.5?-30:W+30;
+  const targetY=screenY(y);
+  fireballs.push({
+    x:side,
+    y:targetY+(Math.random()-.5)*100,
+    vx:0,vy:0,
+    speed:200+Math.random()*150+height*.05,
+    r:14+Math.random()*10,
+    life:6,
+    flicker:Math.random()*Math.PI*2
+  });
+  playTone(150,.3,"sawtooth",.08);
+}
+
+function updateFireballs(dt){
+  const px=W/2+x,py=screenY(y);
+  for(const f of fireballs){
+    const dx=px-f.x,dy=py-f.y;
+    const dist=Math.sqrt(dx*dx+dy*dy)||1;
+    f.vx+=(dx/dist)*f.speed*dt*3;
+    f.vy+=(dy/dist)*f.speed*dt*3;
+    f.vx*=Math.pow(.3,dt);f.vy*=Math.pow(.3,dt);
+    f.x+=f.vx*dt;f.y+=f.vy*dt;
+    f.life-=dt;
+    f.flicker+=dt*10;
+    // Collision with player
+    if(dist<30+f.r){
+      f.life=0;
+      // Hit! Lose combo and money penalty
+      combo=0;
+      const penalty=Math.floor(money*.1);
+      money=Math.max(0,money-penalty);
+      if(!practice)save();
+      updateHUD();
+      toast("🔥 HIT! -$"+fmt(penalty));
+      playTone(100,.4,"sawtooth",.2);
+      particle(px,py,25);
+      // Knockback
+      vy=-15;
+    }
+  }
+  fireballs=fireballs.filter(f=>f.life>0&&f.x>-100&&f.x<W+100&&f.y>-100&&f.y<H+100);
+}
+
+function tryParry(){
+  initAudio();
+  if(parryCooldown>0)return;
+  parryCooldown=0.25;
+  parryFlash=1;
+  const px=W/2+x,py=screenY(y);
+  const PARRY_RANGE=180,PERFECT_RANGE=85;
+  // One press destroys EVERY fireball in range - no unfair doubles
+  const hits=[];
+  for(let i=fireballs.length-1;i>=0;i--){
+    const f=fireballs[i];
+    const d=Math.sqrt((px-f.x)**2+(py-f.y)**2);
+    if(d<=PARRY_RANGE){hits.push({f,d});fireballs.splice(i,1)}
+  }
+  if(hits.length){
+    let perfect=false;
+    for(const h of hits){
+      const p=h.d<=PERFECT_RANGE;
+      if(p)perfect=true;
+      boom(h.f.x,h.f.y,p?34:24);
+      shockwaves.push({x:h.f.x,y:h.f.y,r:10,max:p?120:80,life:1});
+      combo++;if(combo>maxCombo)maxCombo=combo;
+      addMoney(p?150:60);
+    }
+    parries+=hits.length;
+    vy=Math.max(vy,perfect?34+power*.5:24+power*.3); // parry launches you upward
+    if(hits.length>1){toast("💥 DOUBLE PARRY!");comboPopup(hits.length+"x PARRY!");}
+    else if(perfect){toast("💥 PERFECT PARRY!");comboPopup("PERFECT! +$150");}
+    else{toast("💥 PARRIED!");comboPopup("PARRY! +$60");}
+    playTone(200,.25,"sawtooth",.2);
+    setTimeout(()=>playTone(600,.2,"square",.15),60);
+    setTimeout(()=>playTone(900,.15,"square",.12),130);
+  } else {
+    // Whiff - small click so timing matters
+    playTone(180,.08,"square",.06);
+  }
+}
+
+function drawFireball(f){
+  ctx.save();ctx.translate(f.x,f.y);
+  const flick=1+Math.sin(f.flicker)*.15;
+  ctx.scale(flick,flick);
+
+  // Outer glow
+  const grd=ctx.createRadialGradient(0,0,f.r*.2,0,0,f.r*1.5);
+  grd.addColorStop(0,"rgba(255,255,200,.9)");
+  grd.addColorStop(.3,"rgba(255,180,50,.8)");
+  grd.addColorStop(.6,"rgba(255,80,20,.5)");
+  grd.addColorStop(1,"rgba(200,20,0,0)");
+  ctx.fillStyle=grd;
+  ctx.beginPath();ctx.arc(0,0,f.r*1.5,0,7);ctx.fill();
+
+  // Fire body
+  const body=ctx.createRadialGradient(-f.r*.2,-f.r*.2,0,0,0,f.r);
+  body.addColorStop(0,"#fff8e0");
+  body.addColorStop(.3,"#ffcc33");
+  body.addColorStop(.6,"#ff6611");
+  body.addColorStop(1,"#cc1100");
+  ctx.fillStyle=body;
+  ctx.beginPath();ctx.arc(0,0,f.r,0,7);ctx.fill();
+
+  // Flame tendrils
+  ctx.strokeStyle="rgba(255,100,20,.6)";
+  ctx.lineWidth=3;
+  for(let i=0;i<5;i++){
+    const angle=f.flicker*.7+i*Math.PI*2/5;
+    const len=f.r*(1.2+Math.sin(f.flicker+i)*.4);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle)*f.r*.5,Math.sin(angle)*f.r*.5);
+    ctx.quadraticCurveTo(
+      Math.cos(angle+.3)*f.r*.9,Math.sin(angle+.3)*f.r*.9,
+      Math.cos(angle)*len,Math.sin(angle)*len
+    );
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function checkMilestones(){
+  if(milestoneIdx<milestones.length&&height>=milestones[milestoneIdx]){
+    toast("🏆 MILESTONE: "+fmt(milestones[milestoneIdx])+"m!");
+    playMilestoneSound();
+    milestoneIdx++;
+  }
+  // Update milestone bar
+  if(milestoneIdx<milestones.length){
+    const prev=milestoneIdx===0?0:milestones[milestoneIdx-1];
+    const next=milestones[milestoneIdx];
+    const pct=Math.min(100,((height-prev)/(next-prev))*100);
+    $("milestoneFill").style.width=pct+"%";
+    $("milestoneText").textContent="Next milestone: "+fmt(next)+"m";
+  } else {
+    $("milestoneFill").style.width="100%";
+    $("milestoneText").textContent="All milestones reached!";
+  }
+}
+
+function update(dt){
+  if(keys.a)vx-=28*dt;
+  if(keys.d)vx+=28*dt;
+  vx*=Math.pow(.05,dt);
+  x+=vx*dt*3;
+  x=Math.max(-420,Math.min(420,x));
+
+  if(keys.j&&saved.jetpack&&vy>0&&!jumpHeld){
+    vy+=20+power*.5;jumpHeld=true;toast("🚀 JETPACK!");playJumpSound();
+  }
+  if(!keys.j)jumpHeld=false;
+
+  if(y>0||vy>0){
+    const gravity=saved.feather?14:23;
+    vy-=gravity*dt*(keys.s?2:1);
+    y+=vy*dt;
+    if(y<0){y=0;vy=0;combo=0;jumpsUsed=0}
+  }
+
+  height=Math.max(0,y);
+  if(height>best){best=height;if(!practice)save()}
+  cameraY=Math.max(0,height-230);
+  ensureBirds();
+  checkMilestones();
+
+  // Jump trail
+  if(vy>5){
+    trailPoints.push({x:W/2+x,y:screenY(y),life:1});
+  }
+  for(const t of trailPoints){t.life-=dt*2.5;t.y+=vy*dt*.3}
+  trailPoints=trailPoints.filter(t=>t.life>0);
+
+  // Squash recovery
+  jumpSquash=Math.max(0,jumpSquash-dt*4);
+  parryCooldown=Math.max(0,parryCooldown-dt);
+  parryFlash=Math.max(0,parryFlash-dt*3);
+  for(const s of shockwaves){s.r+=(s.max-s.r)*dt*8;s.life-=dt*1.6}
+  shockwaves=shockwaves.filter(s=>s.life>0);
+
+  for(const b of birds){
+    b.x+=b.vx*dt*60;
+    b.phase+=dt*2;
+    if(Math.abs(b.x)>470)b.vx*=-1;
+
+    if(saved.magnet){
+      const dx=x-b.x;
+      if(Math.abs(dx)<130)b.x+=Math.sign(dx)*25*dt;
+    }
+
+    if(vy<=0&&Math.abs(y-b.h)<11&&Math.abs(x-b.x)<52)landBird(b);
+  }
+
+  if(!practice&&height>10&&Math.random()<dt*.05)addMoney(Math.max(1,height*.04));
+
+  // Fireballs spawn at high altitude - one at a time with a fair gap
+  fireballTimer-=dt;
+  if(height>200){
+    const maxAlive=height>4000?2:1;
+    const gap=Math.max(1.4,3.2-(height-200)/2500); // seconds between spawns
+    if(fireballTimer<=0&&fireballs.length<maxAlive){
+      spawnFireball();
+      fireballTimer=gap;
+    }
+  }
+  updateFireballs(dt);
+
+  for(const p of particles){
+    p.x+=p.vx;p.y+=p.vy;p.vy+=.15;p.life-=dt*1.8;
+  }
+  particles=particles.filter(p=>p.life>0);
+  updateHUD();
+}
+
+function drawSky(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  const t=Math.min(height/10000,1);
+  g.addColorStop(0,`rgb(${70-40*t},${180-100*t},${255-80*t})`);
+  g.addColorStop(1,`rgb(${185-100*t},${225-80*t},${255-60*t})`);
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+
+  for(const c of clouds){
+    let cy=(c.y-cameraY*.08)%(H+160);if(cy<-80)cy+=H+160;
+    ctx.fillStyle="rgba(255,255,255,.72)";
+    ctx.beginPath();
+    ctx.arc(c.x,cy,c.s*.45,0,7);
+    ctx.arc(c.x+c.s*.4,cy-10,c.s*.55,0,7);
+    ctx.arc(c.x+c.s*.85,cy,c.s*.4,0,7);
+    ctx.fill();
+  }
+}
+function drawWorld(){
+  const gy=groundY();
+  ctx.fillStyle="#4da64d";ctx.fillRect(0,gy,W,H-gy);
+  ctx.fillStyle="#80512e";ctx.fillRect(0,gy,W,8);
+
+  const city=Math.min(height/500,1);
+  ctx.fillStyle=`rgba(40,60,90,${city*.7})`;
+  for(let i=0;i<18;i++){
+    const bw=30+(i%4)*12,bh=30+(i*37%90)*city;
+    ctx.fillRect(i*bw,gy-8-bh,bw-5,bh);
+  }
+}
+function drawPlayer(){
+  const px=W/2+x,py=screenY(y);
+
+  if(y<180){
+    ctx.fillStyle="rgba(0,0,0,.22)";
+    ctx.beginPath();ctx.ellipse(px,groundY()+2,30,7,0,0,7);ctx.fill();
+  }
+
+  // Jump trail
+  for(const t of trailPoints){
+    ctx.globalAlpha=t.life*.4;
+    ctx.fillStyle="#7ce2ff";
+    ctx.beginPath();ctx.arc(t.x,t.y,4,0,7);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  ctx.save();ctx.translate(px,py);
+
+  // Squash and stretch
+  const stretch=1+jumpSquash*.3;
+  const squash=1-jumpSquash*.2;
+  ctx.scale(squash,stretch);
+
+  ctx.fillStyle="#243b65";ctx.fillRect(-13,-36,26,32);
+
+  ctx.fillStyle="#f0bd91";
+  ctx.beginPath();ctx.arc(0,-48,12,0,7);ctx.fill();
+
+  ctx.fillStyle="#4b2d1d";
+  ctx.beginPath();ctx.arc(0,-53,12,Math.PI,Math.PI*2);ctx.fill();
+
+  ctx.strokeStyle="#f0bd91";ctx.lineWidth=7;
+  ctx.beginPath();
+  ctx.moveTo(-11,-29);ctx.lineTo(-20,-7);
+  ctx.moveTo(11,-29);ctx.lineTo(20,-7);
+  ctx.stroke();
+
+  ctx.strokeStyle="#17243b";ctx.lineWidth=7;
+  ctx.beginPath();
+  ctx.moveTo(-7,-5);ctx.lineTo(-11,17);
+  ctx.moveTo(7,-5);ctx.lineTo(11,17);
+  ctx.stroke();
+
+  ctx.restore();
+}
+function drawBird(b){
+  const sy=screenY(b.h),bx=W/2+b.x;
+  if(sy<-100||sy>H+100)return;
+
+  const scale=b.type==="gold"?1.35:b.type==="eagle"?1.15:.85;
+
+  ctx.save();ctx.translate(bx,sy);ctx.scale(scale,scale);
+
+  // Wing flap
+  const flap=Math.sin(b.phase)*.3;
+
+  ctx.fillStyle=b.type==="gold"?"#ffd84d":b.type==="eagle"?"#5b4b42":"#26323d";
+  ctx.beginPath();ctx.ellipse(0,0,22,10,0,0,7);ctx.fill();
+
+  ctx.fillStyle=b.type==="gold"?"#fff1a1":"#394b5d";
+  ctx.beginPath();
+  ctx.ellipse(-13,-5-flap*8,18,6,-.3-flap,0,7);
+  ctx.ellipse(13,-5-flap*8,18,6,.3+flap,0,7);
+  ctx.fill();
+
+  ctx.fillStyle="#f3a62b";
+  ctx.beginPath();ctx.moveTo(21,0);ctx.lineTo(31,4);ctx.lineTo(21,7);ctx.fill();
+
+  // Eye
+  ctx.fillStyle="#fff";
+  ctx.beginPath();ctx.arc(14,-4,4,0,7);ctx.fill();
+  ctx.fillStyle="#000";
+  ctx.beginPath();ctx.arc(15,-4,2,0,7);ctx.fill();
+
+  ctx.restore();
+}
+function draw(){
+  drawSky();drawWorld();
+  for(const b of birds)drawBird(b);
+  drawPlayer();
+
+  // Draw fireballs
+  for(const f of fireballs)drawFireball(f);
+
+  // Parry shockwaves
+  for(const s of shockwaves){
+    ctx.globalAlpha=Math.max(0,s.life);
+    ctx.strokeStyle="#ffdd55";ctx.lineWidth=4;
+    ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,7);ctx.stroke();
+    ctx.strokeStyle="rgba(255,120,20,.7)";ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(s.x,s.y,s.r*.7,0,7);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // Parry timing ring around player
+  if(parryFlash>0){
+    const px=W/2+x,py=screenY(y);
+    ctx.globalAlpha=parryFlash*.8;
+    ctx.strokeStyle="#7ce2ff";ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(px,py,85,0,7);ctx.stroke();
+    ctx.strokeStyle="rgba(124,226,255,.4)";ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(px,py,180,0,7);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.color||"#fff";
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Red danger overlay intensifies with height
+  if(height>150){
+    const danger=Math.min(.55,(height-150)/2000);
+    const pulse=1+Math.sin(performance.now()*.005)*.1;
+    ctx.fillStyle=`rgba(255,0,0,${danger*pulse})`;
+    ctx.fillRect(0,0,W,H);
+
+    // Red vignette
+    const vg=ctx.createRadialGradient(W/2,H/2,H*.3,W/2,H/2,H*.8);
+    vg.addColorStop(0,"rgba(255,0,0,0)");
+    vg.addColorStop(1,`rgba(180,0,0,${danger*1.5*pulse})`);
+    ctx.fillStyle=vg;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  ctx.fillStyle="rgba(255,255,255,.7)";
+  ctx.font="bold 12px Arial";
+  ctx.fillText("ALTITUDE "+fmt(height)+"m",16,H-58);
+}
+
+function loop(now){
+  const dt=Math.min((now-last)/1000,.033);
+  last=now;
+  update(dt);draw();
+  requestAnimationFrame(loop);
+}
+
+renderShop();
+updateHUD();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
