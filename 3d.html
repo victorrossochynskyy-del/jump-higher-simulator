@@ -18,6 +18,13 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
 #shopBtn,#practiceBtn{position:fixed;right:15px;color:white;background:#142b50;padding:12px 18px;box-shadow:0 5px 15px #0005;z-index:5}
 #shopBtn{top:15px}
 #practiceBtn{top:62px}
+#adminBtn{position:fixed;right:15px;bottom:13px;color:#fff;background:#5a2d82;padding:10px 14px;box-shadow:0 5px 15px #0005;z-index:5}
+#admin{position:fixed;inset:0;background:#0008;display:grid;place-items:center;z-index:10}
+#admin.hidden{display:none}
+#closeAdmin{position:absolute;right:12px;top:12px;background:#405779;color:white;font-size:24px;width:38px;height:38px}
+#adminInput{width:100%;padding:12px;border-radius:10px;border:0;font-size:15px;margin-top:8px}
+#adminLog{max-height:150px;overflow:auto;font-size:13px;color:#aee5ff;margin-top:8px}
+#announce{position:fixed;top:18%;left:0;width:100%;text-align:center;font-size:34px;font-weight:900;color:#ffe14d;text-shadow:0 4px 12px #000;opacity:0;pointer-events:none;transition:opacity .3s;z-index:9}
 #controls{position:fixed;bottom:13px;left:50%;transform:translateX(-50%);background:#102544dd;color:#fff;padding:8px 13px;border-radius:10px;font-size:12px;white-space:nowrap;z-index:5}
 #toast{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);font-size:30px;font-weight:900;color:white;text-shadow:0 4px 10px #000;opacity:0;pointer-events:none;transition:opacity .3s;z-index:5}
 #milestoneBar{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);width:280px;height:18px;background:#0006;border-radius:9px;overflow:hidden;border:1px solid #ffffff44;z-index:5}
@@ -72,6 +79,18 @@ canvas{touch-action:none}
 
 <button id="shopBtn">SHOP</button>
 <button id="practiceBtn">PRACTICE: OFF</button>
+<button id="adminBtn">ADMIN</button>
+<div id="announce"></div>
+<div id="admin" class="hidden">
+  <div class="panel">
+    <button id="closeAdmin">×</button>
+    <h1>🔧 Admin Panel</h1>
+    <p>Owner only. Type a command, press Enter.</p>
+    <input id="adminInput" placeholder="/announce Hello!" autocomplete="off">
+    <div id="adminLog"></div>
+    <p style="font-size:11px">/announce text • /money n • /power n • /combo n • /clear • /fly n • /pass newpass</p>
+  </div>
+</div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL • J = JETPACK • F = PARRY • E = SHOP</div>
 <div id="touch">
   <div class="tcluster">
@@ -555,6 +574,39 @@ $("practiceBtn").onclick=()=>{
   toast(practice?"PRACTICE MODE":"MONEY MODE");
 };
 
+// ---- Owner admin panel ----
+let isAdmin=localStorage.getItem("jh_admin")==="1";
+let adminPass=localStorage.getItem("jh_pass")||"owner123";
+$("adminBtn").onclick=()=>{
+  if(!isAdmin){
+    const p=prompt("Enter owner password:");
+    if(p===adminPass){isAdmin=true;localStorage.setItem("jh_admin","1");toast("Welcome, owner!")}
+    else{toast("Wrong password!");return}
+  }
+  $("admin").classList.remove("hidden");renderAdminLog();
+};
+$("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
+function renderAdminLog(){}
+function adminSay(t){const d=document.createElement("div");d.textContent="• "+t;$("adminLog").prepend(d);}
+function bigAnnounce(t){
+  $("announce").textContent=t;$("announce").style.opacity=1;
+  clearTimeout(bigAnnounce.t);bigAnnounce.t=setTimeout(()=>$("announce").style.opacity=0,4000);
+}
+$("adminInput").addEventListener("keydown",e=>{
+  if(e.key!=="Enter")return;
+  const v=e.target.value.trim();e.target.value="";
+  if(!v)return;
+  const sp=v.indexOf(" "),cmd=sp<0?v:v.slice(0,sp),arg=sp<0?"":v.slice(sp+1);
+  if(cmd==="/announce"&&arg){bigAnnounce(arg);playMilestoneSound();adminSay("Announced: "+arg)}
+  else if(cmd==="/money"){money+=parseInt(arg)||0;save();updateHUD();adminSay("Money +"+arg)}
+  else if(cmd==="/power"){power+=parseInt(arg)||0;save();updateHUD();adminSay("Power +"+arg)}
+  else if(cmd==="/combo"){combo=parseInt(arg)||0;updateHUD();adminSay("Combo x"+combo)}
+  else if(cmd==="/clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;adminSay("Fireballs cleared")}
+  else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
+  else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
+  else adminSay("Unknown command");
+});
+
 // ============================== INPUT ==============================
 const keys={};
 addEventListener("keydown",e=>{
@@ -587,6 +639,8 @@ if(touchMode){
 const skyDay=new THREE.Color(0x72c9ff),skyHigh=new THREE.Color(0x0a1030);
 const fogDay=new THREE.Color(0x72c9ff),fogHigh=new THREE.Color(0x1a0a20);
 function update(dt){
+  // Freeze everything while shopping so fireballs can't hit you
+  if(!$("shop").classList.contains("hidden"))return;
   if(keys.a||keys.arrowleft)vx-=30*dt;
   if(keys.d||keys.arrowright)vx+=30*dt;
   vx*=Math.pow(.05,dt);

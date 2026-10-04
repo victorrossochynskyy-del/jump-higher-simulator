@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Coaster Park 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#87ceeb}
+body{user-select:none}
+canvas{position:fixed;inset:0;display:block}
+#hud{position:fixed;top:14px;left:14px;display:flex;gap:8px;z-index:5}
+.stat{padding:8px 12px;min-width:96px;background:#102544dd;border:1px solid #ffffff55;border-radius:12px;color:#fff}
+.stat small{display:block;color:#aee5ff;font-size:10px;font-weight:bold}
+.stat b{font-size:19px}
+button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
+#rideBtns{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:5}
+#rideBtns button{background:#142b50;color:#fff;padding:12px 16px;box-shadow:0 5px 15px #0005}
+#menu{position:fixed;inset:0;background:#0009;display:grid;place-items:center;z-index:10;padding:16px}
+#menu.hidden{display:none}
+#cards{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;max-width:1100px;max-height:92vh;overflow:auto}
+.card{width:250px;background:linear-gradient(#17345d,#09172e);color:#fff;border-radius:18px;padding:20px;box-shadow:0 15px 50px #000}
+.card h2{margin:0 0 4px;font-size:22px}
+.card .type{color:#7ce2ff;font-size:12px;font-weight:bold}
+.card p{color:#b8cce4;font-size:13px;min-height:56px}
+.card .stats{font-size:12px;color:#fff;background:#ffffff12;border-radius:10px;padding:8px;margin-bottom:12px}
+.card button{width:100%;padding:13px;background:#7ce2ff;color:#102544;font-size:16px}
+#menuTitle{text-align:center;color:#fff;margin:0 0 16px;font-size:34px;text-shadow:0 4px 12px #000}
+@media(max-width:600px){.stat{min-width:76px}.stat b{font-size:15px}}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="stat"><small>SPEED</small><b id="speed">0 km/h</b></div>
+  <div class="stat"><small>HEIGHT</small><b id="cheight">0m</b></div>
+  <div class="stat"><small>G-FORCE</small><b id="gforce">1.0g</b></div>
+  <div class="stat"><small>RIDE TIME</small><b id="rtime">0s</b></div>
+</div>
+<div id="rideBtns">
+  <button id="camBtn">🎥 CAM</button>
+  <button id="soundBtn">🔊 SOUND</button>
+  <button id="stopBtn">⏹ EXIT</button>
+</div>
+
+<div id="menu">
+  <div>
+    <h1 id="menuTitle">🎢 Coaster Park 3D</h1>
+    <div id="cards"></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+
+// ============================== AUDIO ==============================
+let audioCtx=null,windGain=null,windFilter=null,soundOn=true;
+function initAudio(){
+  if(!audioCtx){
+    try{
+      audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+      // looping wind noise
+      const len=audioCtx.sampleRate*1.5,buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+      const src=audioCtx.createBufferSource();src.buffer=buf;src.loop=true;
+      windFilter=audioCtx.createBiquadFilter();windFilter.type="lowpass";windFilter.frequency.value=300;
+      windGain=audioCtx.createGain();windGain.gain.value=0;
+      src.connect(windFilter);windFilter.connect(windGain);windGain.connect(audioCtx.destination);
+      src.start();
+    }catch(e){}
+  }
+  if(audioCtx&&audioCtx.state==="suspended")audioCtx.resume();
+}
+addEventListener("touchstart",()=>initAudio(),{passive:true});
+function tone(f0,f1,dur,type="sine",vol=.15){
+  if(!audioCtx||!soundOn)return;
+  try{
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type=type;o.frequency.setValueAtTime(f0,audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),audioCtx.currentTime+dur);
+    g.gain.setValueAtTime(vol,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+function clack(){tone(170,120,.05,"square",.12);setTimeout(()=>tone(150,100,.05,"square",.1),90)}
+function chainRattle(){tone(95,70,.06,"square",.08)}
+function scream(){tone(750+Math.random()*300,350,.7,"sawtooth",.07)}
+
+// ============================== SCENE ==============================
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+scene.fog=new THREE.Fog(0x87ceeb,80,400);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+document.body.appendChild(renderer.domElement);
+addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+scene.add(new THREE.HemisphereLight(0xcfeaff,0x4da64d,1));
+const sun=new THREE.DirectionalLight(0xffffff,.8);sun.position.set(40,80,30);scene.add(sun);
+
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(800,800),new THREE.MeshLambertMaterial({color:0x55a755}));
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+const lake=new THREE.Mesh(new THREE.CircleGeometry(28,32),new THREE.MeshLambertMaterial({color:0x3a9bdc}));
+lake.rotation.x=-Math.PI/2;lake.position.set(-70,.05,-120);scene.add(lake);
+
+// trees + clouds
+const trunkMat=new THREE.MeshLambertMaterial({color:0x6b4a2b});
+const leafMat=new THREE.MeshLambertMaterial({color:0x2e7d32});
+for(let i=0;i<70;i++){
+  const t=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.3,.45,2,6),trunkMat);trunk.position.y=1;t.add(trunk);
+  const c1=new THREE.Mesh(new THREE.ConeGeometry(2,4,8),leafMat);c1.position.y=4;t.add(c1);
+  const c2=new THREE.Mesh(new THREE.ConeGeometry(1.4,3,8),leafMat);c2.position.y=6;t.add(c2);
+  let px=(Math.random()-.5)*260,pz=40-Math.random()*320;
+  if(Math.abs(px)<38&&pz<25&&pz>-260){px+=px<0?-45:45}
+  t.position.set(px,0,pz);t.scale.setScalar(.8+Math.random()*.9);scene.add(t);
+}
+const cloudMat=new THREE.MeshLambertMaterial({color:0xffffff,transparent:true,opacity:.85});
+for(let i=0;i<12;i++){
+  const c=new THREE.Group();
+  for(let j=0;j<3;j++){
+    const s=new THREE.Mesh(new THREE.SphereGeometry(3+Math.random()*3,10,8),cloudMat);
+    s.position.set(j*5-5,Math.random()*2,Math.random()*4);s.scale.y=.55;c.add(s);
+  }
+  c.position.set((Math.random()-.5)*300,55+Math.random()*30,-50-Math.random()*250);
+  scene.add(c);
+}
+
+// station platform (all coasters start near origin heading -z)
+(function station(){
+  const g=new THREE.Group();
+  const plat=new THREE.Mesh(new THREE.BoxGeometry(8,.6,26),new THREE.MeshLambertMaterial({color:0x8d8d8d}));
+  plat.position.set(4.5,2.4,7);g.add(plat);
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(9,.4,27),new THREE.MeshLambertMaterial({color:0xb33939}));
+  roof.position.set(4.5,7.5,7);g.add(roof);
+  for(const [px,pz] of [[1,-5],[8,-5],[1,19],[8,19]]){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.25,.25,5.4,8),new THREE.MeshLambertMaterial({color:0x555555}));
+    post.position.set(px,4.9,pz);g.add(post);
+  }
+  const sign=new THREE.Mesh(new THREE.BoxGeometry(10,2,.4),new THREE.MeshLambertMaterial({color:0xffd84d}));
+  sign.position.set(4.5,9,20);g.add(sign);
+  scene.add(g);
+})();
+
+// ============================== TRACKS ==============================
+function cork(pts,x0,y0,z0,len,r,n){
+  for(let k=0;k<=n;k++){const a=k/n*Math.PI*2;pts.push([x0+r*Math.sin(a),y0-r*Math.cos(a),z0-len*k/n])}
+}
+const COASTERS=[
+ {id:"loop",name:"Sky Loop",type:"STEEL • LOOPING",thrill:"★★★★☆",inv:1,
+  desc:"Classic out-and-back with a towering 7m vertical loop. Pure old-school adrenaline.",
+  pts:[[0,3,20],[0,3,0],[0,3,-15],[0,10,-32],[0,20,-52],[0,21,-62],[0,10,-76],[0,4,-88],[0,3.5,-94]]},
+ {id:"cork",name:"Double Corkscrew",type:"STEEL • INVERSIONS",thrill:"★★★★★",inv:2,
+  desc:"Two back-to-back 360° corkscrew rolls after a steep first drop. Hang on tight!",
+  pts:[[0,3,20],[0,3,0],[0,3,-15],[0,9,-30],[0,16,-48],[0,17,-58],[0,8,-72],[0,4,-82],[0,3.5,-88]]},
+ {id:"hyper",name:"Sky Piercer Hyper",type:"STEEL • HYPERCOASTER",thrill:"★★★★★",inv:0,
+  desc:"45m lift hill, a near-vertical first drop and giant airtime camelbacks. Tallest in the park.",
+  pts:[[0,3,20],[0,3,0],[0,6,-15],[0,14,-32],[0,26,-50],[0,38,-66],[0,45,-78],[0,44,-86],[0,30,-98],[0,12,-110],[0,5,-122],[0,5,-132],[0,13,-146],[0,6,-160],[0,4,-172],[0,5,-184],[0,11,-196],[0,5,-208],[2,4,-220],[10,4,-230],[20,3,-232],[28,3,-224],[30,3,-210],[28,3,-190],[22,3,-160],[16,3,-120],[10,3,-80],[4,3,-45],[0,3,-20]]},
+ {id:"twist",name:"Timber Twister",type:"WOODEN • TWISTER",thrill:"★★★★☆",inv:0,
+  desc:"Rattling wooden twister with wild banked S-turns through the trees. No loops, all speed.",
+  pts:[[0,3,20],[0,3,0],[0,5,-18],[0,9,-38],[2,10,-56],[8,8,-70],[16,5,-76],[24,4,-72],[28,4,-62],[24,5,-50],[14,6,-46],[6,8,-52],[0,9,-64],[-8,8,-76],[-16,5,-82],[-24,3,-78],[-28,2.5,-68],[-24,3,-56],[-14,4,-50],[-6,5,-56],[0,6,-68],[4,7,-82],[10,6,-94],[18,4,-100],[24,3,-96],[26,2.5,-86],[22,3,-72],[14,3,-60],[6,3,-44],[0,3,-24]]},
+ {id:"kid",name:"Junior Cruiser",type:"FAMILY • GENTLE",thrill:"★★☆☆☆",inv:0,
+  desc:"A gentle scenic ride for the little ones. Slow, smooth, no surprises.",
+  pts:[[0,2.5,14],[0,2.5,0],[0,2.5,-20],[0,3.5,-42],[0,3.5,-62],[0,2.5,-82],[6,2.5,-96],[16,2.5,-100],[26,2.5,-94],[31,2.5,-80],[31,2.5,-60],[26,2.5,-46],[18,2.5,-42],[12,3,-50],[10,3.5,-60],[13,3,-72],[20,2.5,-76],[25,2.5,-66],[22,2.5,-54],[15,2.5,-46],[8,2.5,-36],[3,2.5,-22]]}
+];
+// programmatic inversions
+(function(){
+  const loop=COASTERS[0].pts;
+  for(let k=0;k<=10;k++){const a=Math.PI+k/10*Math.PI*2;loop.push([0,10.5+7*Math.cos(a),-101+7*Math.sin(a)])}
+  loop.push([0,4,-112],[0,6,-124],[2,7,-136],[10,6,-146],[20,4,-148],[28,3,-142],[30,3,-128],[26,3,-110],[18,3,-92],[8,3,-72],[2,3,-52],[0,3,-30],[0,3,-10]);
+  const c=COASTERS[1].pts;
+  cork(c,0,6.5,-92,24,2.5,10);
+  c.push([0,3.5,-122],[0,3.5,-128]);
+  cork(c,0,6.5,-130,24,2.5,10);
+  c.push([0,4,-162],[2,5,-174],[10,5,-184],[20,4,-186],[28,3,-180],[30,3,-166],[26,3,-148],[18,3,-128],[8,3,-108],[2,3,-86],[0,3,-64],[0,3,-40],[0,3,-16]);
+})();
+
+const railMat=new THREE.MeshLambertMaterial({color:0xd23c3c});
+const woodMat=new THREE.MeshLambertMaterial({color:0x8a5a2b});
+const tieMat=new THREE.MeshLambertMaterial({color:0x5d3d1c});
+const supMat=new THREE.MeshLambertMaterial({color:0x777777});
+const cache={};
+
+function buildCoaster(def){
+  if(cache[def.id])return cache[def.id];
+  const g=new THREE.Group();
+  const isWood=def.id==="twist";
+  const curve=new THREE.CatmullRomCurve3(def.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])),true,"catmullrom",.08);
+  const N=1400,spaced=curve.getSpacedPoints(N);
+  spaced.pop(); // N points, closed
+  // cumulative length
+  const cum=[0];
+  for(let i=1;i<=N;i++){const a=spaced[i-1],b=spaced[i%N];cum.push(cum[i-1]+a.distanceTo(b))}
+  const L=cum[N],ds=L/N;
+  // tangents
+  const T=[];
+  for(let i=0;i<N;i++)T.push(spaced[(i+1)%N].clone().sub(spaced[(i-1+N)%N]).normalize());
+  // parallel-transport up/side frames (stable through loops)
+  const UP=[],SIDE=[];let up=new THREE.Vector3(0,1,0);
+  for(let i=0;i<N;i++){
+    const t=T[i];
+    let u=up.clone().sub(t.clone().multiplyScalar(up.dot(t)));
+    if(u.lengthSq()<1e-6)u=new THREE.Vector3(1,0,0).sub(t.clone().multiplyScalar(t.x));
+    u.normalize();UP.push(u);
+    SIDE.push(new THREE.Vector3().crossVectors(t,u).normalize());
+    up=u;
+  }
+  // rails
+  for(const s of [-0.55,0.55]){
+    const rp=spaced.map((p,i)=>p.clone().addScaledVector(SIDE[i],s).addScaledVector(UP[i],.15));
+    const tube=new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rp,true),600,.13,6,true),
+      isWood?woodMat:railMat);
+    g.add(tube);
+  }
+  // sleepers
+  const tieGeo=new THREE.BoxGeometry(1.5,.14,.34);
+  const m4=new THREE.Matrix4();
+  for(let i=0;i<N;i+=7){
+    const tie=new THREE.Mesh(tieGeo,tieMat);
+    const xA=new THREE.Vector3().crossVectors(UP[i],T[i]).normalize();
+    const yA=new THREE.Vector3().crossVectors(T[i],xA).normalize();
+    m4.makeBasis(xA,yA,T[i]);
+    tie.quaternion.setFromRotationMatrix(m4);
+    tie.position.copy(spaced[i]).addScaledVector(UP[i],-.05);
+    g.add(tie);
+  }
+  // supports
+  for(let i=0;i<N;i+=46){
+    const p=spaced[i],h=p.y-.4;
+    if(h<1.5)continue;
+    const sup=new THREE.Mesh(new THREE.CylinderGeometry(.28,.4,h,8),supMat);
+    sup.position.set(p.x,h/2,p.z);g.add(sup);
+    const foot=new THREE.Mesh(new THREE.BoxGeometry(1.6,.5,1.6),supMat);
+    foot.position.set(p.x,.25,p.z);g.add(foot);
+  }
+  // lift-hill end = first big peak (for chain-lift zone)
+  let peakI=0;for(let i=0;i<N*.35;i++)if(spaced[i].y>spaced[peakI].y)peakI=i;
+  const built={group:g,spaced,T,UP,SIDE,L,ds,N,sLift:peakI*ds,
+    maxH:Math.max(...spaced.map(p=>p.y)),len:L};
+  // inversions: count transitions into upside-down
+  let inv=0,wasUp=true;
+  for(let i=0;i<N;i+=10){const u=UP[i].y<0;if(u&&wasUp){inv++;wasUp=false}if(!u)wasUp=true}
+  built.inv=inv;
+  cache[def.id]=built;
+  return built;
+}
+
+// ============================== TRAIN ==============================
+const cartColors=[0xe33e3e,0x2e7de3,0x2ecc71,0xffb300];
+const train=[];
+for(let c=0;c<4;c++){
+  const cart=new THREE.Group();
+  const base=new THREE.Mesh(new THREE.BoxGeometry(1.6,.5,2.8),new THREE.MeshLambertMaterial({color:cartColors[c]}));
+  base.position.y=.55;cart.add(base);
+  const back=new THREE.Mesh(new THREE.BoxGeometry(1.6,.9,.3),new THREE.MeshLambertMaterial({color:0x222222}));
+  back.position.set(0,1.1,-1.25);cart.add(back);
+  for(const sx of [-.4,.4]){
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(.22,.28,.7,8),new THREE.MeshLambertMaterial({color:0x243b65}));
+    body.position.set(sx,1.15,-.3);cart.add(body);
+    const hd=new THREE.Mesh(new THREE.SphereGeometry(.22,10,8),new THREE.MeshLambertMaterial({color:0xf0bd91}));
+    hd.position.set(sx,1.7,-.3);cart.add(hd);
+  }
+  scene.add(cart);train.push(cart);
+}
+train.forEach(t=>t.visible=false);
+
+// ============================== RIDE STATE ==============================
+let built=null,riding=false,s=0,v=0,rideT=0,camMode=0,bank=0,clackAcc=0,liftAcc=0,lastScream=0,maxG=0;
+const _m4=new THREE.Matrix4(),_p=new THREE.Vector3(),_x=new THREE.Vector3(),_y=new THREE.Vector3(),_up=new THREE.Vector3(),_t=new THREE.Vector3();
+
+function sampleAt(sDist){
+  const N=built.N,f=((sDist/built.L)*N)%N, i0=Math.floor(f),fr=f-i0,i1=(i0+1)%N;
+  _p.copy(built.spaced[i0]).lerp(built.spaced[i1],fr);
+  _t.copy(built.T[i0]).lerp(built.T[i1],fr).normalize();
+  _up.copy(built.UP[i0]).lerp(built.UP[i1],fr).normalize();
+  return i0;
+}
+function startRide(def){
+  initAudio();
+  if(built&&built.group.parent)scene.remove(built.group);
+  built=buildCoaster(def);
+  scene.add(built.group);
+  s=0;v=0;rideT=0;bank=0;maxG=0;
+  train.forEach(t=>t.visible=true);
+  riding=true;
+  $("menu").classList.add("hidden");
+}
+function stopRide(){riding=false;$("menu").classList.remove("hidden")}
+
+$("stopBtn").onclick=stopRide;
+$("camBtn").onclick=()=>{camMode=(camMode+1)%2;toastCam()};
+$("soundBtn").onclick=()=>{soundOn=!soundOn;$("soundBtn").textContent=soundOn?"🔊 SOUND":"🔇 MUTED";if(windGain)windGain.gain.value=0};
+function toastCam(){}
+
+// menu cards
+$("cards").innerHTML=COASTERS.map((c,i)=>{
+  const tmp=buildCoaster(c);scene.remove(tmp.group);
+  return `<div class="card"><h2>${c.name}</h2><div class="type">${c.type}</div>
+  <p>${c.desc}</p>
+  <div class="stats">📏 ${Math.round(tmp.len)}m long • ⛰ ${tmp.maxH.toFixed(0)}m tall • 🔄 ${tmp.inv} inversions • ${c.thrill}</div>
+  <button onclick="ride(${i})">RIDE!</button></div>`;
+}).join("");
+window.ride=i=>startRide(COASTERS[i]);
+
+// ============================== LOOP ==============================
+let last=performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt=Math.min((now-last)/1000,.033);last=now;
+  if(!riding||!built){
+    // idle: slow orbit around park
+    const t=now*.00005;
+    camera.position.set(Math.sin(t)*90,35,Math.cos(t)*90-100);
+    camera.lookAt(0,8,-110);
+    renderer.render(scene,camera);return;
+  }
+  // --- physics along track ---
+  const i0=sampleAt(s);
+  const ahead=built.spaced[(i0+5)%built.N],behind=built.spaced[(i0-5+built.N)%built.N];
+  const dyds=(ahead.y-behind.y)/(10*built.ds);
+  v+=(-9.81*dyds-0.02*v-0.3)*dt;
+  if(s<built.sLift)v=Math.max(v,9);      // chain lift
+  v=Math.max(4,Math.min(46,v));          // no rollback, top speed
+  s=(s+v*dt)%built.L;
+  rideT+=dt;
+  // banking from lateral curvature
+  const iA=(i0-3+built.N)%built.N,iB=(i0+3)%built.N;
+  const lat=built.T[iB].clone().sub(built.T[iA]).dot(built.SIDE[i0])/(6*built.ds);
+  const bankT=Math.max(-1.05,Math.min(1.05,Math.atan(v*v*lat/9.81)));
+  bank+=(bankT-bank)*Math.min(1,dt*4);
+  // g-force estimate
+  const k=built.T[iA].angleTo(built.T[iB])/(6*built.ds);
+  const g=1+v*v*k/9.81;if(g>maxG)maxG=g;
+  // --- train cars ---
+  const gap=3.4;
+  for(let c=0;c<train.length;c++){
+    const sc=((s-c*gap)%built.L+built.L)%built.L;
+    const ii=sampleAt(sc);
+    const upR=_up.clone().applyAxisAngle(_t,bank);
+    _x.crossVectors(upR,_t).normalize();
+    _y.crossVectors(_t,_x).normalize();
+    _m4.makeBasis(_x,_y,_t);
+    train[c].quaternion.setFromRotationMatrix(_m4);
+    train[c].position.copy(_p).addScaledVector(upR,.9);
+  }
+  // --- camera ---
+  sampleAt(s);
+  const headP=_p.clone().addScaledVector(_up,2.3);
+  if(camMode===0){
+    camera.position.copy(headP);
+    camera.lookAt(_p.clone().addScaledVector(_t,12).addScaledVector(_up,.5));
+  }else{
+    camera.position.copy(_p).addScaledVector(_t,-10).addScaledVector(_up,4.5);
+    camera.lookAt(_p.clone().addScaledVector(_up,1));
+  }
+  // --- sounds ---
+  if(windGain){
+    const w=soundOn?Math.min(.5,(v/46)*(v/46)*.6):0;
+    windGain.gain.value+=(w-windGain.gain.value)*Math.min(1,dt*5);
+    windFilter.frequency.value=300+v*35;
+  }
+  clackAcc+=v*dt;
+  if(clackAcc>12.5){clackAcc=0;if(soundOn)clack()}
+  if(s<built.sLift){liftAcc+=dt;if(liftAcc>.35){liftAcc=0;if(soundOn)chainRattle()}}
+  if(dyds<-.45&&v>22&&now-lastScream>2800){lastScream=now;if(soundOn)scream()}
+  // --- HUD ---
+  $("speed").textContent=Math.round(v*3.6)+" km/h";
+  $("cheight").textContent=Math.round(_p.y)+"m";
+  $("gforce").textContent=g.toFixed(1)+"g";
+  $("rtime").textContent=Math.round(rideT)+"s";
+  renderer.render(scene,camera);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
