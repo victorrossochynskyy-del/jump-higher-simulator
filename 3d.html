@@ -597,15 +597,15 @@ $("adminInput").addEventListener("keydown",e=>{
   const v=e.target.value.trim();e.target.value="";
   if(!v)return;
   const sp=v.indexOf(" "),cmd=sp<0?v:v.slice(0,sp),arg=sp<0?"":v.slice(sp+1);
-  if(v[0]!=="/"){bigAnnounce(v);playMilestoneSound();adminSay("Announced: "+v)}
-  else if(cmd==="/announce"&&arg){bigAnnounce(arg);playMilestoneSound();adminSay("Announced: "+arg)}
+  if(cmd==="/announce"){const msg=(arg||"").trim();if(msg){bigAnnounce(msg);playMilestoneSound();adminSay("Announced: "+msg)}else adminSay("Type a message after /announce")}
+  else if(v[0]!=="/"){bigAnnounce(v);playMilestoneSound();adminSay("Announced: "+v)}
   else if(cmd==="/money"){money+=parseInt(arg)||0;save();updateHUD();adminSay("Money +"+arg)}
   else if(cmd==="/power"){power+=parseInt(arg)||0;save();updateHUD();adminSay("Power +"+arg)}
   else if(cmd==="/combo"){combo=parseInt(arg)||0;updateHUD();adminSay("Combo x"+combo)}
   else if(cmd==="/clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;adminSay("Fireballs cleared")}
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
   else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
-  else adminSay("Unknown command");
+  else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();adminSay("Announced: "+(msg||v))}
 });
 
 // ============================== INPUT ==============================
