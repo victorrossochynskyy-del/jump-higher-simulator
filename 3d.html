@@ -86,9 +86,9 @@ canvas{touch-action:none}
     <button id="closeAdmin">×</button>
     <h1>🔧 Admin Panel</h1>
     <p>Owner only. Type a command, press Enter.</p>
-    <input id="adminInput" placeholder="/announce Hello!" autocomplete="off">
+    <input id="adminInput" placeholder="Type a message to announce..." autocomplete="off">
     <div id="adminLog"></div>
-    <p style="font-size:11px">/announce text • /money n • /power n • /combo n • /clear • /fly n • /pass newpass</p>
+    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass</p>
   </div>
 </div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL • J = JETPACK • F = PARRY • E = SHOP</div>
@@ -597,7 +597,8 @@ $("adminInput").addEventListener("keydown",e=>{
   const v=e.target.value.trim();e.target.value="";
   if(!v)return;
   const sp=v.indexOf(" "),cmd=sp<0?v:v.slice(0,sp),arg=sp<0?"":v.slice(sp+1);
-  if(cmd==="/announce"&&arg){bigAnnounce(arg);playMilestoneSound();adminSay("Announced: "+arg)}
+  if(v[0]!=="/"){bigAnnounce(v);playMilestoneSound();adminSay("Announced: "+v)}
+  else if(cmd==="/announce"&&arg){bigAnnounce(arg);playMilestoneSound();adminSay("Announced: "+arg)}
   else if(cmd==="/money"){money+=parseInt(arg)||0;save();updateHUD();adminSay("Money +"+arg)}
   else if(cmd==="/power"){power+=parseInt(arg)||0;save();updateHUD();adminSay("Power +"+arg)}
   else if(cmd==="/combo"){combo=parseInt(arg)||0;updateHUD();adminSay("Combo x"+combo)}
