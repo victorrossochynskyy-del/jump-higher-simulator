@@ -139,6 +139,7 @@ addEventListener("resize",resize);resize();
 
 const keys={};
 addEventListener("keydown",e=>{
+  if(e.target&&e.target.tagName==="INPUT")return; // don't hijack typing in admin box
   keys[e.key.toLowerCase()]=true;
   if(e.code==="Space"){e.preventDefault();jump()}
   if(e.key.toLowerCase()==="e")$("shop").classList.toggle("hidden");
