@@ -90,7 +90,7 @@ canvas{touch-action:none}
     <p>Owner only. Gifts & messages reach everyone playing.</p>
     <input id="adminInput" placeholder="Type a message to announce..." autocomplete="off">
     <div id="adminLog"></div>
-    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe</p>
+    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx</p>
   </div>
 </div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL • J = JETPACK • F = PARRY • E = SHOP</div>
@@ -168,6 +168,8 @@ function netApply(m){
   else if(m.cmd==="power"&&m.n){const n=Math.max(0,Math.min(10000,m.n|0));power+=n;save();updateHUD();toast("⚡ Owner boosted +"+n+" power!")}
   else if(m.cmd==="clear"){for(const f of fireballs)scene.remove(f.mesh);fireballs.length=0;toast("🧹 Owner cleared the skies!")}
   else if(m.cmd==="wipe"){fullWipe();bigAnnounce("💥 Owner wiped all progress! Fresh start!");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
+  else if(m.cmd==="music"){startMusic(m.track)}
+  else if(m.cmd==="fx"){fxBurst(m.kind)}
   else if(m.cmd==="restart"){bigAnnounce("🔄 Owner is restarting the game...");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
 }
 let saved=JSON.parse(localStorage.getItem("jumpHigherSave3D")||"null")||{
@@ -180,6 +182,7 @@ let birds=[],fireballs=[],bursts=[],rings=[],lastBirdId=0;
 let totalJumps=0,totalBirdsHit=0,maxCombo=0,parries=0;
 let jumpsUsed=0,groundStreak=0,jumpHeld=false;
 let parryCooldown=0,parryFlash=0,parryRing=null;
+let shakeT=0; // screen shake timer
 let fireballTimer=0,dangerZone=-1,zone=0; // 0=fire zone, 1=purple void (10k), 2=dark ghosts (20k)
 function zoneFor(h){return h>=20000?2:h>=10000?1:0}
 function checkZone(){
@@ -634,6 +637,62 @@ $("practiceBtn").onclick=()=>{
 let isAdmin=localStorage.getItem("jh_admin")==="1";
 let adminPass=localStorage.getItem("jh_pass")||"owner123";
 let wipeArmed=0;
+// ---- Admin music: tiny chiptune sequencer ----
+const TRACKS={
+  adventure:{bpm:140,bass:[110,110,131,98],lead:[440,523,659,523,440,523,659,784]},
+  chill:{bpm:80,bass:[131,98,110,98],lead:[262,330,392,330,262,294,330,262]},
+  boss:{bpm:170,bass:[82,82,98,73],lead:[220,233,247,220,196,220,233,311]},
+  victory:{bpm:120,bass:[131,131,131,131],lead:[523,659,784,1047,784,1047,1319,1047]}
+};
+let musicTimer=null,musicStep=0,musicName=null;
+function mnote(f,dur,type,vol){
+  if(!audioCtx)return;
+  try{
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type=type;o.frequency.value=f;
+    g.gain.setValueAtTime(vol,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+function musicTick(){
+  const tr=TRACKS[musicName];
+  if(!tr)return stopMusic();
+  const spb=60/tr.bpm/2,i=musicStep%tr.lead.length;
+  mnote(tr.lead[i],spb*.9,"square",.04);
+  if(i%2===0)mnote(tr.bass[(i/2|0)%tr.bass.length],spb*1.8,"triangle",.055);
+  musicStep++;
+  musicTimer=setTimeout(musicTick,spb*1000);
+}
+function startMusic(name){
+  stopMusic();
+  if(!name||name==="off"||!TRACKS[name])return;
+  initAudio();musicName=name;musicStep=0;musicTick();
+  toast("🎵 Now playing: "+name);
+}
+function stopMusic(){musicName=null;if(musicTimer){clearTimeout(musicTimer);musicTimer=null}}
+// ---- Admin screen effects (3D bursts around the player) ----
+function fxBurst(kind){
+  if(kind==="shake"){shakeT=.8;playTone(80,.5,"sawtooth",.18);return}
+  const puffs=kind==="confetti"?3:5;
+  for(let k=0;k<puffs;k++){
+    const cx=x+(Math.random()-.5)*16,cy=y+4+Math.random()*8,n=40;
+    const geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(n*3),vel=[];
+    const cols=kind==="confetti"?[0xff595e,0xffca3a,0x8ac926,0x1982c4,0x6a4c93,0xffffff]:[0xfff8e0,0xffcc33,0xff6611,0xff2255,0x7ce2ff,0xffffff];
+    for(let i=0;i<n;i++){
+      pos[i*3]=cx;pos[i*3+1]=cy;pos[i*3+2]=0;
+      const a=Math.random()*Math.PI*2,sp=kind==="confetti"?2+Math.random()*4:3+Math.random()*9;
+      vel.push([Math.cos(a)*sp,Math.sin(a)*sp+(kind==="fireworks"?2:0)]);
+    }
+    geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+    const pts=new THREE.Points(geo,new THREE.PointsMaterial({color:cols[k%cols.length],size:.5,transparent:true,opacity:1}));
+    scene.add(pts);
+    bursts.push({pts,vel,life:1.6});
+  }
+  playMilestoneSound();
+}
 function fullWipe(){
   money=0;best=0;power=10;rebirths=0;combo=0;
   saved.feather=saved.jetpack=saved.magnet=saved.cloud=saved.doubleJump=false;
@@ -675,6 +734,8 @@ $("adminInput").addEventListener("keydown",e=>{
       else{adminSay("Wiped locally (offline)");setTimeout(()=>location.reload(),1500)}
     }else{wipeArmed=Date.now();adminSay("⚠️ Type /wipe again within 10s to erase EVERYONE's money, power and upgrades!")}
   }
+  else if(cmd==="/music"){const t=(arg||"").trim().toLowerCase();const ok=!!TRACKS[t];startMusic(ok?t:"off");const sent=netSend("music",{track:ok?t:"off"});adminSay(ok?("🎵 Playing "+t+(sent?" for everyone!":" (local only)")):"Music stopped. Tracks: adventure, chill, boss, victory")}
+  else if(cmd==="/fx"){const k=(arg||"").trim().toLowerCase();const kk=["fireworks","confetti","shake"].includes(k)?k:"fireworks";fxBurst(kk);const sent=netSend("fx",{kind:kk});adminSay("✨ "+kk+"!"+(sent?" (everyone sees it!)":" (local only)"))}
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
   else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
   else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();const sent=netSend("announce",{text:msg||v});adminSay("Announced: "+(msg||v)+(sent?" (sent to everyone!)":" (offline - local only)"))}
@@ -740,6 +801,7 @@ function update(dt){
 
   parryCooldown=Math.max(0,parryCooldown-dt);
   parryFlash=Math.max(0,parryFlash-dt*3);
+  shakeT=Math.max(0,shakeT-dt);
   jumpSquash=Math.max(0,jumpSquash-dt*4);
 
   if(vy>5&&Math.random()<.6)spawnTrail();
@@ -820,7 +882,8 @@ function update(dt){
   $("warn").style.display=fireballs.length?"block":"none";
 
   // Camera chase
-  camera.position.set(x*.55,y+4.5,11);
+  // Camera chase (+shake when an effect demands it)
+  camera.position.set(x*.55+(shakeT>0?(Math.random()-.5)*shakeT*3:0),y+4.5+(shakeT>0?(Math.random()-.5)*shakeT*3:0),11);
   camera.lookAt(x*.7,y+1.2,0);
 
   // Parry ring flash
