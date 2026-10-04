@@ -336,8 +336,9 @@ function loop(now){
   }
   // --- physics along track (substepped so steep drops stay stable) ---
   const steps=Math.max(1,Math.ceil(dt/.008)),h=dt/steps;
+  let dyds=0;
   for(let st=0;st<steps;st++){
-    const dyds=slopeAt(s);
+    dyds=slopeAt(s);
     v+=(-9.81*dyds-0.02*v-0.3)*h;
     if(s<built.sLift)v=Math.max(v,9);      // chain lift
     v=Math.max(4,Math.min(46,v));          // no rollback, top speed
