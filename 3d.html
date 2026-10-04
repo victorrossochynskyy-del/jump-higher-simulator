@@ -47,6 +47,8 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
 .tbtn.big{width:86px;height:86px;font-size:30px}
 .tbtn:active{background:#7ce2ff66}
 canvas{touch-action:none}
+#warn{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#ff2222dd;color:#fff;font-weight:900;padding:10px 18px;border-radius:12px;font-size:15px;display:none;z-index:5;animation:blink .5s infinite alternate;pointer-events:none;white-space:nowrap}
+@keyframes blink{from{opacity:1}to{opacity:.5}}
 @media(max-width:600px){.stat{min-width:88px}.stat b{font-size:15px}#controls{font-size:9px}#milestoneBar{width:200px}}
 </style>
 </head>
@@ -94,6 +96,7 @@ canvas{touch-action:none}
 <div id="toast"></div>
 <div id="comboPopup"></div>
 <div id="danger"></div>
+<div id="warn">⚠️ FIREBALL INCOMING — PARRY WITH F / 💥</div>
 
 <div id="shop" class="hidden">
   <div class="panel">
@@ -123,7 +126,13 @@ let jumpSquash=0;
 
 // ============================== AUDIO ==============================
 let audioCtx=null;
-function initAudio(){if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}}
+function initAudio(){
+  if(!audioCtx){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}
+  if(audioCtx&&audioCtx.state==="suspended")audioCtx.resume();
+}
+// Mobile browsers lock audio until a touch happens - unlock on any touch
+addEventListener("touchstart",()=>initAudio(),{passive:true});
+addEventListener("touchend",()=>initAudio(),{passive:true});
 function playTone(freq,dur,type="square",vol=.15){
   if(!audioCtx)return;
   try{
@@ -343,8 +352,10 @@ function spawnFireball(){
   halo.scale.set(4,4,1);grp.add(halo);
   grp.position.set(x+side*22,y+1+(Math.random()-.5)*8,0);
   scene.add(grp);
-  fireballs.push({mesh:grp,vx:0,vy:0,speed:8+Math.random()*5+height*.004,r:.9,life:8,flick:Math.random()*6});
-  playTone(150,.3,"sawtooth",.08);
+  fireballs.push({mesh:grp,vx:0,vy:0,speed:(8+Math.random()*5+height*.004)*(touchMode?.7:1),r:.9,life:8,flick:Math.random()*6});
+  // Warning siren so you hear it coming (even on phones)
+  playTone(220,.15,"sawtooth",.14);
+  setTimeout(()=>playTone(180,.2,"sawtooth",.14),120);
 }
 function explodeFireball(f,perfect){
   scene.remove(f.mesh);
@@ -435,7 +446,7 @@ function tryParry(){
     const d=Math.sqrt((x-f.mesh.position.x)**2+((y+1)-f.mesh.position.y)**2);
     if(d<bestD){bestD=d;bestI=i}
   }
-  const RANGE=6,PERFECT=3;
+  const RANGE=touchMode?7.5:6,PERFECT=3;
   if(bestI>=0&&bestD<=RANGE){
     const f=fireballs[bestI];
     fireballs.splice(bestI,1);
@@ -555,7 +566,8 @@ addEventListener("keydown",e=>{
 addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 
 // Touch controls for phones/tablets
-if('ontouchstart' in window||navigator.maxTouchPoints>0){
+const touchMode=('ontouchstart' in window||navigator.maxTouchPoints>0);
+if(touchMode){
   $("touch").classList.add("on");
   const hold=(id,down,up)=>{
     const el=$(id);
@@ -661,6 +673,7 @@ function update(dt){
   scene.fog.color.copy(fogDay).lerp(fogHigh,t);
   const danger=height>150?Math.min(.85,(height-150)/2000):0;
   $("danger").style.opacity=(danger*(1+Math.sin(performance.now()*.005)*.12)).toFixed(3);
+  $("warn").style.display=fireballs.length?"block":"none";
 
   // Camera chase
   camera.position.set(x*.55,y+4.5,11);
