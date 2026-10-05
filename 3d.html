@@ -163,6 +163,7 @@ let netClient=null,netLive=false;
 // ---- Leaderboard (scores shared live between all players) ----
 const NET_SCORES="jhsim/7f3a9c2e1b04/scores";
 let myName=localStorage.getItem("jh_name")||"";
+if(!myName){myName="Player"+(1000+Math.floor(Math.random()*9000));try{localStorage.setItem("jh_name",myName)}catch(e){}}
 let scores={};
 let lastScorePub=0;
 function maybePublishScore(force){
@@ -782,12 +783,12 @@ $("adminBtn").onclick=()=>{
   $("admin").classList.remove("hidden");renderAdminLog();
 };
 $("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
-$("scoresBtn").onclick=()=>{$("scores").classList.remove("hidden");renderScores()};
+$("scoresBtn").onclick=()=>{$("scores").classList.remove("hidden");maybePublishScore(true);renderScores()};
 $("closeScores").onclick=()=>$("scores").classList.add("hidden");
 $("saveName").onclick=()=>{
   myName=$("nameInput").value.trim().slice(0,16);
   localStorage.setItem("jh_name",myName);
-  lastScorePub=0;maybePublishScore(true);renderScores();
+  lastScorePub=0;maybePublishScore(true);if(myName)scores[myNetId]={name:myName,best:Math.floor(best),power:Math.floor(power),ts:Date.now()};renderScores();
   toast(myName?"Playing as "+myName:"Name cleared");
 };
 function armBtn(btn,label,fn){
@@ -1016,6 +1017,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 netInit();
+setInterval(()=>maybePublishScore(),60000); // heartbeat so late joiners see everyone
 requestAnimationFrame(loop);
 </script>
 </body>
