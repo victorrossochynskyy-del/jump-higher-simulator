@@ -90,6 +90,10 @@ canvas{touch-action:none}
     <p>Owner only. Gifts & messages reach everyone playing.</p>
     <input id="adminInput" placeholder="Type a message to announce..." autocomplete="off">
     <div id="adminLog"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="wipeBtn" style="flex:1;padding:12px;background:#c22;color:#fff">💥 WIPE ALL</button>
+      <button id="restartBtn" style="flex:1;padding:12px;background:#2a7;color:#fff">🔄 RESTART ALL</button>
+    </div>
     <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx</p>
   </div>
 </div>
@@ -324,19 +328,43 @@ function spawnTrail(){
 function makeBirdMesh(type){
   const g=new THREE.Group();
   const scale=type==="gold"?1.35:type==="eagle"?1.15:.85;
-  const bodyColor=type==="gold"?0xffd84d:type==="eagle"?0x5b4b42:0x26323d;
-  const wingColor=type==="gold"?0xfff1a1:0x394b5d;
-  const body=new THREE.Mesh(new THREE.SphereGeometry(.7,14,12),new THREE.MeshLambertMaterial({color:bodyColor}));
-  body.scale.set(1.4,.65,.7);g.add(body);
-  const wingGeo=new THREE.BoxGeometry(1.2,.12,.6);
-  const wl=new THREE.Mesh(wingGeo,new THREE.MeshLambertMaterial({color:wingColor}));wl.position.set(0,.3,-.7);g.add(wl);
-  const wr=new THREE.Mesh(wingGeo,new THREE.MeshLambertMaterial({color:wingColor}));wr.position.set(0,.3,.7);g.add(wr);
-  const beak=new THREE.Mesh(new THREE.ConeGeometry(.22,.5,10),new THREE.MeshLambertMaterial({color:0xf3a62b}));
-  beak.rotation.z=-Math.PI/2;beak.position.set(1.05,0,0);g.add(beak);
-  const eye=new THREE.Mesh(new THREE.SphereGeometry(.12,8,8),new THREE.MeshBasicMaterial({color:0x000000}));
-  eye.position.set(.55,.25,.3);g.add(eye);
+  const C=type==="gold"
+    ?{body:0xe8a91c,belly:0xffd84d,head:0xfff1a1,wing:0xc97f10,beak:0xff8c00}
+    :type==="eagle"
+    ?{body:0x5b4b42,belly:0x8a7a6a,head:0xf4f4f4,wing:0x3e342e,beak:0xf5c518}
+    :{body:0x3a6ea5,belly:0xe8823a,head:0x26323d,wing:0x2c4f78,beak:0xf3a62b};
+  const M=c=>new THREE.MeshLambertMaterial({color:c});
+  // Body + belly
+  const body=new THREE.Mesh(new THREE.SphereGeometry(.7,14,12),M(C.body));
+  body.scale.set(1.5,.7,.75);g.add(body);
+  const belly=new THREE.Mesh(new THREE.SphereGeometry(.55,12,10),M(C.belly));
+  belly.scale.set(1.3,.55,.6);belly.position.set(.1,-.25,0);g.add(belly);
+  // Head + beak + eyes
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.38,14,12),M(C.head));
+  head.position.set(.95,.3,0);g.add(head);
+  const beak=new THREE.Mesh(new THREE.ConeGeometry(.16,.45,10),M(C.beak));
+  beak.rotation.z=-Math.PI/2;beak.position.set(1.38,.28,0);g.add(beak);
+  for(const s of [-1,1]){
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(.09,8,8),new THREE.MeshBasicMaterial({color:0x111111}));
+    eye.position.set(1.05,.4,s*.3);g.add(eye);
+  }
+  // Fanned tail
+  const tail=new THREE.Mesh(new THREE.ConeGeometry(.3,.9,4),M(C.wing));
+  tail.rotation.z=Math.PI/2;tail.scale.set(1,.6,1.4);tail.position.set(-1.1,0,0);g.add(tail);
+  // Two-segment wings (shoulder + outer feather section)
+  const mkWing=s=>{
+    const sh=new THREE.Group();sh.position.set(0,.3,s*.55);
+    const inner=new THREE.Mesh(new THREE.BoxGeometry(.5,.1,.7),M(C.wing));
+    inner.position.z=s*.35;sh.add(inner);
+    const outer=new THREE.Group();outer.position.z=s*.7;
+    const oMesh=new THREE.Mesh(new THREE.BoxGeometry(.45,.08,.9),M(C.wing));
+    oMesh.position.z=s*.45;outer.add(oMesh);
+    sh.add(outer);g.add(sh);
+    return {sh,outer};
+  };
+  const L=mkWing(-1),R=mkWing(1);
   g.scale.set(scale,scale,scale);
-  g.userData={wl,wr};
+  g.userData={wl:L.sh,wr:R.sh,wlO:L.outer,wrO:R.outer};
   return g;
 }
 function makeBird(h){
@@ -708,6 +736,26 @@ $("adminBtn").onclick=()=>{
   $("admin").classList.remove("hidden");renderAdminLog();
 };
 $("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
+function armBtn(btn,label,fn){
+  if(btn.dataset.armed){
+    delete btn.dataset.armed;btn.textContent=label;btn.style.background=label==="💥 WIPE ALL"?"#c22":"#2a7";
+    fn();
+  }else{
+    btn.dataset.armed="1";btn.textContent="⚠️ TAP AGAIN TO CONFIRM";btn.style.background="#f80";
+    setTimeout(()=>{if(btn.dataset.armed){delete btn.dataset.armed;btn.textContent=label;btn.style.background=label==="💥 WIPE ALL"?"#c22":"#2a7"}},10000);
+  }
+}
+$("wipeBtn").onclick=()=>armBtn($("wipeBtn"),"💥 WIPE ALL",()=>{
+  fullWipe();
+  const sent=netSend("wipe",{});
+  if(sent){bigAnnounce("💥 Wiping everyone's progress...");setTimeout(()=>location.reload(),2500);adminSay("Wiped everyone. Fresh start!")}
+  else{adminSay("Wiped locally (offline)");setTimeout(()=>location.reload(),1500)}
+});
+$("restartBtn").onclick=()=>armBtn($("restartBtn"),"🔄 RESTART ALL",()=>{
+  const sent=netSend("restart",{});
+  if(sent){bigAnnounce("🔄 Restarting everyone's game...");setTimeout(()=>location.reload(),2500);adminSay("Restarting everyone...")}
+  else adminSay("Restart failed (offline - local only)");
+});
 function renderAdminLog(){}
 function adminSay(t){const d=document.createElement("div");d.textContent="• "+t;$("adminLog").prepend(d);}
 function bigAnnounce(t){
@@ -823,9 +871,12 @@ function update(dt){
     }
     if(b.mesh){
       b.mesh.position.x=b.x;
+      b.mesh.rotation.y=b.vx<0?Math.PI:0; // face travel direction
       const flap=Math.sin(b.phase)*.55;
       b.mesh.userData.wl.rotation.x=flap;
       b.mesh.userData.wr.rotation.x=-flap;
+      b.mesh.userData.wlO.rotation.x=flap*.7;
+      b.mesh.userData.wrO.rotation.x=-flap*.7;
     }
     // Swept landing check while falling
     if(vy<=0&&(prevY>=b.h&&y<=b.h+1.5||Math.abs(y-b.h)<2.2)&&Math.abs(x-b.x)<2.4)landBird(b);
