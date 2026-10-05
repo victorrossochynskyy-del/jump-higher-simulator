@@ -213,8 +213,12 @@ function netInit(){
       if(t.indexOf(NET_SCORES)===0){
         const nm=m&&m.name?String(m.name).slice(0,16):"";
         if(nm){
-          const key=nm.toLowerCase(),prev=scores[key],b=m.best|0;
-          scores[key]={name:nm,best:Math.max(b,(prev&&prev.best)||0),power:m.power|0,ts:+m.ts||0,mine:key===(myName||"").toLowerCase()||!!(prev&&prev.mine)};
+          const rule=modList[nm.toLowerCase()];
+          if(!(rule&&rule.a==="ban")){
+            const fn=(rule&&rule.a==="rename"&&rule.to)?String(rule.to).slice(0,16):nm;
+            const key=fn.toLowerCase(),prev=scores[key],b=m.best|0;
+            scores[key]={name:fn,best:Math.max(b,(prev&&prev.best)||0),power:m.power|0,ts:+m.ts||0,mine:key===(myName||"").toLowerCase()||!!(prev&&prev.mine)};
+          }
         }
         if(!$("scores").classList.contains("hidden"))renderScores();
         return;
