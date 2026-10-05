@@ -164,7 +164,7 @@ if(!myName){myName="Player"+(1000+Math.floor(Math.random()*9000));try{localStora
 let scores={};
 let lastScorePub=0;
 function maybePublishScore(force){
-  if(!netLive||!myName||!netClient)return;
+  if(!netLive||!myName||!netClient||!(best>0))return;
   const now=Date.now();
   if(!force&&now-lastScorePub<10000)return;
   lastScorePub=now;
@@ -177,7 +177,7 @@ function renderScores(){
     .filter(([id,s])=>s&&s.name&&Date.now()-(s.ts||0)<7*864e5)
     .sort((a,b)=>b[1].best-a[1].best).slice(0,10);
   $("scoreList").innerHTML=rows.length?rows.map(([id,s],i)=>
-    `<div class="item"><div><h3>${i+1}. ${escapeHtml(s.name)}${id===myNetId?" (YOU)":""}</h3><p>⚡ ${fmt(s.power||0)} power</p></div><b>${fmt(s.best)}m</b></div>`
+    `<div class="item"><div><h3>${i+1}. ${escapeHtml(s.name)}${s.mine?" (YOU)":""}</h3><p>⚡ ${fmt(s.power||0)} power</p></div><b>${fmt(s.best)}m</b></div>`
   ).join(""):'<p>No scores yet — enter your name and be the first!</p>';
 }
 function netDot(){const d=$("netDot");if(d)d.textContent=netLive?"🟢 LIVE":"🔴 OFF";}
@@ -195,8 +195,11 @@ function netInit(){
     netClient.on("message",(t,buf)=>{
       let m;try{m=JSON.parse(buf.toString())}catch(e){return}
       if(t.indexOf(NET_SCORES)===0){
-        const id=t.slice(NET_SCORES.length+1);
-        if(id&&m&&m.name)scores[id]={name:String(m.name).slice(0,16),best:m.best|0,power:m.power|0,ts:m.ts|0};
+        const nm=m&&m.name?String(m.name).slice(0,16):"";
+        if(nm){
+          const key=nm.toLowerCase(),prev=scores[key],b=m.best|0;
+          scores[key]={name:nm,best:Math.max(b,(prev&&prev.best)||0),power:m.power|0,ts:+m.ts||0,mine:key===(myName||"").toLowerCase()||!!(prev&&prev.mine)};
+        }
         if(!$("scores").classList.contains("hidden"))renderScores();
         return;
       }
@@ -518,7 +521,7 @@ $("closeScores").onclick=()=>$("scores").classList.add("hidden");
 $("saveName").onclick=()=>{
   myName=$("nameInput").value.trim().slice(0,16);
   localStorage.setItem("jh_name",myName);
-  lastScorePub=0;maybePublishScore(true);if(myName)scores[myNetId]={name:myName,best:Math.floor(best),power:Math.floor(power),ts:Date.now()};renderScores();
+  lastScorePub=0;maybePublishScore(true);if(myName)scores[myName.toLowerCase()]={name:myName,best:Math.floor(best),power:Math.floor(power),ts:Date.now(),mine:true};renderScores();
   toast(myName?"Playing as "+myName:"Name cleared");
 };
 function armBtn(btn,label,fn){
