@@ -164,6 +164,8 @@ if(!myName){myName="Player"+(1000+Math.floor(Math.random()*9000));try{localStora
 let scores={};
 let lastScorePub=0;
 const NET_MOD="jhsim/7f3a9c2e1b04/mod";
+const NET_META="jhsim/7f3a9c2e1b04/meta";
+let boardGen=0; // leaderboard generation: wipe bumps it, old scores stop counting
 let modList={}; // owner moderation: name(lower) -> {a:"ban"} or {a:"rename",to}
 function pubMod(){return netSend("mod",{list:modList},true,NET_MOD)}
 function applyMod(){
@@ -183,7 +185,17 @@ function maybePublishScore(force){
   const now=Date.now();
   if(!force&&now-lastScorePub<10000)return;
   lastScorePub=now;
-  try{netClient.publish(NET_SCORES+"/"+myNetId,JSON.stringify({name:myName.slice(0,16),best:Math.floor(best),power:Math.floor(power),ts:now}),{retain:true})}catch(e){}
+  try{netClient.publish(NET_SCORES+"/"+myNetId,JSON.stringify({name:myName.slice(0,16),best:Math.floor(best),power:Math.floor(power),ts:now,g:boardGen}),{retain:true})}catch(e){}
+}
+// ---- Name filter: block slurs, racism and cussing ----
+const BADWORDS=["fuck","fuk","shit","bitch","whore","slut","dick","pussy","cunt","bastard","asshole","douche","fag","faggot","dyke","retard","nigger","nigga","chink","spic","kike","wetback","tranny","hitler","nazi","kkk","porn","rape","boob","tits","penis","vagina","thot","orgasm","masturbat","gook","paki","beaner","shemale","hentai","dildo","jap","twat","wank","fuckwit","shithead"];
+function cleanName(s){
+  const norm=String(s||"").toLowerCase()
+    .replace(/[@4]/g,"a").replace(/3/g,"e").replace(/[1!|]/g,"i")
+    .replace(/0/g,"o").replace(/5|\$/g,"s").replace(/7/g,"t")
+    .replace(/[^a-z]/g,"");
+  for(const w of BADWORDS)if(norm.includes(w))return false;
+  return true;
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function renderScores(){
@@ -203,16 +215,17 @@ function netInit(){
   let ui=0;
   try{
     netClient=mqtt.connect(urls[ui],{connectTimeout:8000,reconnectPeriod:5000,clientId:myNetId+"_"+Date.now().toString(36)});
-    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}try{netClient.subscribe(NET_SCORES+"/#")}catch(e){}try{netClient.subscribe(NET_MOD)}catch(e){}maybePublishScore(true);netDot()});
+    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}try{netClient.subscribe(NET_SCORES+"/#")}catch(e){}try{netClient.subscribe(NET_MOD)}catch(e){}try{netClient.subscribe(NET_META)}catch(e){}maybePublishScore(true);netDot()});
     netClient.on("reconnect",()=>{ui=(ui+1)%urls.length});
     netClient.on("close",()=>{netLive=false;netDot()});
     netClient.on("error",()=>{});
     netClient.on("message",(t,buf)=>{
       let m;try{m=JSON.parse(buf.toString())}catch(e){return}
+      if(t===NET_META){if(m&&m.key===NET_KEY&&typeof m.gen==="number"){boardGen=m.gen;scores={};try{if(!$("scores").classList.contains("hidden"))renderScores()}catch(e){}}return}
       if(t===NET_MOD){if(m&&m.key===NET_KEY&&m.list){modList=m.list||{};applyMod()}return}
       if(t.indexOf(NET_SCORES)===0){
         const nm=m&&m.name?String(m.name).slice(0,16):"";
-        if(nm){
+        if(nm&&cleanName(nm)&&(boardGen===0||m.g===boardGen)){
           const rule=modList[nm.toLowerCase()];
           if(!(rule&&rule.a==="ban")){
             const fn=(rule&&rule.a==="rename"&&rule.to)?String(rule.to).slice(0,16):nm;
@@ -238,7 +251,7 @@ function netApply(m){
   else if(m.cmd==="money"&&m.n){const n=Math.max(0,Math.min(1000000,m.n|0));money+=n;save();updateHUD();toast("🎁 Owner gifted +$"+fmt(n)+"!")}
   else if(m.cmd==="power"&&m.n){const n=Math.max(0,Math.min(10000,m.n|0));power+=n;save();updateHUD();toast("⚡ Owner boosted +"+n+" power!")}
   else if(m.cmd==="clear"){fireballs.length=0;toast("🧹 Owner cleared the skies!")}
-  else if(m.cmd==="wipe"){fullWipe();bigAnnounce("💥 Owner wiped all progress! Fresh start!");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
+  else if(m.cmd==="wipe"){if(typeof m.gen==="number")boardGen=m.gen;scores={};modList={};fullWipe();bigAnnounce("💥 Owner wiped EVERYTHING! Fresh start!");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
   else if(m.cmd==="music"){startMusic(m.track)}
   else if(m.cmd==="fx"){fxBurst(m.kind)}
   else if(m.cmd==="restart"){bigAnnounce("🔄 Owner is restarting the game...");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
@@ -521,6 +534,16 @@ function fxBurst(kind){
   }
   playMilestoneSound();
 }
+function doWipe(){
+  // Full restart: new board generation kills all old scores/names everywhere
+  const ng=boardGen+1;
+  try{if(netClient)netClient.publish(NET_META,JSON.stringify({key:NET_KEY,gen:ng}),{retain:true})}catch(e){}
+  boardGen=ng;scores={};modList={};pubMod();
+  fullWipe();
+  const sent=netSend("wipe",{gen:ng});
+  if(sent){bigAnnounce("💥 Wiping EVERYTHING...");setTimeout(()=>location.reload(),2500);adminSay("Wiped everyone, board names and bans. Fresh start!")}
+  else{adminSay("Wiped locally (offline)");setTimeout(()=>location.reload(),1500)}
+}
 function fullWipe(){
   money=0;best=0;power=10;rebirths=0;combo=0;
   saved.feather=saved.jetpack=saved.magnet=saved.cloud=saved.doubleJump=false;
@@ -539,7 +562,9 @@ $("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
 $("scoresBtn").onclick=()=>{$("scores").classList.remove("hidden");maybePublishScore(true);renderScores()};
 $("closeScores").onclick=()=>$("scores").classList.add("hidden");
 $("saveName").onclick=()=>{
-  myName=$("nameInput").value.trim().slice(0,16);
+  const nn=$("nameInput").value.trim().slice(0,16);
+  if(nn&&!cleanName(nn)){$("nameInput").value=myName;toast("⛔ That name isn't allowed");return}
+  myName=nn;
   localStorage.setItem("jh_name",myName);
   lastScorePub=0;maybePublishScore(true);if(myName)scores[myName.toLowerCase()]={name:myName,best:Math.floor(best),power:Math.floor(power),ts:Date.now(),mine:true};renderScores();
   toast(myName?"Playing as "+myName:"Name cleared");
@@ -553,12 +578,7 @@ function armBtn(btn,label,fn){
     setTimeout(()=>{if(btn.dataset.armed){delete btn.dataset.armed;btn.textContent=label;btn.style.background=label==="💥 WIPE ALL"?"#c22":"#2a7"}},10000);
   }
 }
-$("wipeBtn").onclick=()=>armBtn($("wipeBtn"),"💥 WIPE ALL",()=>{
-  fullWipe();
-  const sent=netSend("wipe",{});
-  if(sent){bigAnnounce("💥 Wiping everyone's progress...");setTimeout(()=>location.reload(),2500);adminSay("Wiped everyone. Fresh start!")}
-  else{adminSay("Wiped locally (offline)");setTimeout(()=>location.reload(),1500)}
-});
+$("wipeBtn").onclick=()=>armBtn($("wipeBtn"),"💥 WIPE ALL",()=>{doWipe()});
 $("restartBtn").onclick=()=>armBtn($("restartBtn"),"🔄 RESTART ALL",()=>{
   const sent=netSend("restart",{});
   if(sent){bigAnnounce("🔄 Restarting everyone's game...");setTimeout(()=>location.reload(),2500);adminSay("Restarting everyone...")}
@@ -583,12 +603,8 @@ $("adminInput").addEventListener("keydown",e=>{
   else if(cmd==="/clear"){fireballs.length=0;const sent=netSend("clear",{});adminSay(sent?"Skies cleared for everyone!":"Skies cleared (offline - local only)")}
   else if(cmd==="/restart"){const sent=netSend("restart",{});if(sent){bigAnnounce("🔄 Restarting everyone's game...");setTimeout(()=>location.reload(),2500);adminSay("Restarting everyone...")}else adminSay("Restart failed (offline - local only)")}
   else if(cmd==="/wipe"){
-    if(Date.now()-(wipeArmed||0)<10000){
-      wipeArmed=0;fullWipe();
-      const sent=netSend("wipe",{});
-      if(sent){bigAnnounce("💥 Wiping everyone's progress...");setTimeout(()=>location.reload(),2500);adminSay("Wiped everyone. Fresh start!")}
-      else{adminSay("Wiped locally (offline)");setTimeout(()=>location.reload(),1500)}
-    }else{wipeArmed=Date.now();adminSay("⚠️ Type /wipe again within 10s to erase EVERYONE's money, power and upgrades!")}
+    if(Date.now()-(wipeArmed||0)<10000){wipeArmed=0;doWipe()}
+    else{wipeArmed=Date.now();adminSay("⚠️ Type /wipe again to erase EVERYTHING: progress, board names and bans!")}
   }
   else if(cmd==="/music"){const t=(arg||"").trim().toLowerCase();const ok=!!TRACKS[t];startMusic(ok?t:"off");const sent=netSend("music",{track:ok?t:"off"});adminSay(ok?("🎵 Playing "+t+(sent?" for everyone!":" (local only)")):"Music stopped. Tracks: adventure, chill, boss, victory")}
   else if(cmd==="/fx"){const k=(arg||"").trim().toLowerCase();const kk=["fireworks","confetti","shake"].includes(k)?k:"fireworks";fxBurst(kk);const sent=netSend("fx",{kind:kk});adminSay("✨ "+kk+"!"+(sent?" (everyone sees it!)":" (local only)"))}
