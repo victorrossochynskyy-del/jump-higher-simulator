@@ -110,7 +110,7 @@ canvas{touch-action:none}
       <button id="wipeBtn" style="flex:1;padding:12px;background:#c22;color:#fff">💥 WIPE ALL</button>
       <button id="restartBtn" style="flex:1;padding:12px;background:#2a7;color:#fff">🔄 RESTART ALL</button>
     </div>
-    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx • /ban • /rename</p>
+    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx • /ban • /rename • /powerreset</p>
   </div>
 </div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL FASTER • J = JETPACK • F = PARRY • E = SHOP</div>
@@ -252,6 +252,7 @@ function netApply(m){
   else if(m.cmd==="power"&&m.n){const n=Math.max(0,Math.min(10000,m.n|0));power+=n;save();updateHUD();toast("⚡ Owner boosted +"+n+" power!")}
   else if(m.cmd==="clear"){fireballs.length=0;toast("🧹 Owner cleared the skies!")}
   else if(m.cmd==="wipe"){if(typeof m.gen==="number")boardGen=m.gen;scores={};modList={};fullWipe();bigAnnounce("💥 Owner wiped EVERYTHING! Fresh start!");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
+  else if(m.cmd==="powerreset"){power=10;save();updateHUD();toast("⚡ Owner reset everyone's power to 10!")}
   else if(m.cmd==="music"){startMusic(m.track)}
   else if(m.cmd==="fx"){fxBurst(m.kind)}
   else if(m.cmd==="restart"){bigAnnounce("🔄 Owner is restarting the game...");playMilestoneSound();setTimeout(()=>location.reload(),2500)}
@@ -609,6 +610,7 @@ $("adminInput").addEventListener("keydown",e=>{
   else if(cmd==="/music"){const t=(arg||"").trim().toLowerCase();const ok=!!TRACKS[t];startMusic(ok?t:"off");const sent=netSend("music",{track:ok?t:"off"});adminSay(ok?("🎵 Playing "+t+(sent?" for everyone!":" (local only)")):"Music stopped. Tracks: adventure, chill, boss, victory")}
   else if(cmd==="/fx"){const k=(arg||"").trim().toLowerCase();const kk=["fireworks","confetti","shake"].includes(k)?k:"fireworks";fxBurst(kk);const sent=netSend("fx",{kind:kk});adminSay("✨ "+kk+"!"+(sent?" (everyone sees it!)":" (local only)"))}
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
+  else if(cmd==="/powerreset"){power=10;save();updateHUD();const sent=netSend("powerreset",{});adminSay(sent?"Everyone's power reset to 10!":"Power reset locally (offline)")}
   else if(cmd==="/ban"){const t=(arg||"").trim().toLowerCase();if(t){modList[t]={a:"ban"};delete scores[t];pubMod();try{if(!$("scores").classList.contains("hidden"))renderScores()}catch(e){}adminSay("🚫 Banned "+t+" from the board")}else adminSay("Usage: /ban name")}
   else if(cmd==="/unban"){const t=(arg||"").trim().toLowerCase();if(modList[t]){delete modList[t];pubMod();adminSay("✅ Unbanned "+t)}else adminSay(t+" is not banned")}
   else if(cmd==="/rename"){const p=(arg||"").trim().split(/\s+/);const old=(p[0]||"").toLowerCase(),nw=(p[1]||"").slice(0,16);if(old&&nw){modList[old]={a:"rename",to:nw};applyMod();pubMod();adminSay("✏️ "+old+" → "+nw)}else adminSay("Usage: /rename oldname newname")}
