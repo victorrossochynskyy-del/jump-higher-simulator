@@ -240,9 +240,18 @@ function computeTrack(def){
 }
 
 // Heavy meshes are only built when you actually ride (keeps the menu fast)
+// beam between two points (for tower lattice work)
+function beamBetween(a,b,r,mat){
+  const d=new THREE.Vector3().subVectors(b,a),len=d.length();
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,6),mat);
+  m.position.copy(a).addScaledVector(d,.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+  return m;
+}
 function buildMeshes(built){
   if(built.group)return built.group;
   const spaced=built.spaced,T=built.T,UP=built.UP,SIDE=built.SIDE,N=built.N,isWood=built.isWood;
+  const supStep=(built.id==="toro"||built.id==="twist")?24:46; // woodies pack bents close together
   const g=new THREE.Group();
   // rails (smooth parallel pair, offset to the sides)
   const SCHEMES={
@@ -252,7 +261,7 @@ function buildMeshes(built){
     twist:{rail:0x8a5a2b,sup:0x6b4a2b},
     kid:{rail:0x22aa55,sup:0xeeeeee},
     toro:{rail:0x7a4a22,sup:0x5d3d1c},
-    ka:{rail:0xe8e8e8,sup:0x999999}
+    ka:{rail:0x35b558,sup:0x232f4a}
   };
   const SCH=SCHEMES[built.id]||SCHEMES.loop;
   const railM=new THREE.MeshLambertMaterial({color:SCH.rail});
@@ -283,7 +292,7 @@ function buildMeshes(built){
     g.add(tie);
   }
   // supports (white A-frames; skipped wherever they'd stab another rail section or the station)
-  for(let i=0;i<=N;i+=46){
+  for(let i=0;i<=N;i+=supStep){
     const p=spaced[i],h=p.y-.4;
     if(h<1.5)continue;
     if(Math.abs(p.x)<4&&p.z>-10&&p.z<24&&p.y<8)continue; // station area
@@ -307,6 +316,33 @@ function buildMeshes(built){
     }
     const bar=new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,3,6),supM);
     bar.rotation.z=Math.PI/2;bar.position.set(p.x,h*.55,p.z);g.add(bar);
+  }
+  // Kingda Ka tower: navy corner columns + green lattice rings around the top hat
+  if(built.id==="ka"){
+    const navyM=new THREE.MeshLambertMaterial({color:0x232f4a});
+    const grnM=new THREE.MeshLambertMaterial({color:0x35b558});
+    for(const px of [-6,6])for(const pz of [-92,-138]){
+      const col=new THREE.Mesh(new THREE.CylinderGeometry(.6,.9,142,8),navyM);
+      col.position.set(px,71,pz);g.add(col);
+      const foot=new THREE.Mesh(new THREE.BoxGeometry(2.4,.8,2.4),navyM);
+      foot.position.set(px,.4,pz);g.add(foot);
+    }
+    const corners=[[-6,-92],[6,-92],[6,-138],[-6,-138]];
+    let lvl=0;
+    for(let yy=10;yy<140;yy+=13){
+      for(let k=0;k<4;k++){
+        const a=corners[k],b=corners[(k+1)%4];
+        g.add(beamBetween(new THREE.Vector3(a[0],yy,a[1]),new THREE.Vector3(b[0],yy,b[1]),.28,grnM));
+      }
+      const d0=corners[lvl%4],d1=corners[(lvl%4+1)%4];lvl++;
+      g.add(beamBetween(new THREE.Vector3(d0[0],yy-6.5,d0[1]),new THREE.Vector3(d1[0],yy+6.5,d1[1]),.18,grnM));
+    }
+    // launch fins along the flat launch straight
+    const finM=new THREE.MeshLambertMaterial({color:0x555555});
+    for(let fz=14;fz>=-56;fz-=10){
+      const fin=new THREE.Mesh(new THREE.BoxGeometry(.5,.7,2.2),finM);
+      fin.position.set(0,3.4,fz);g.add(fin);
+    }
   }
   // terminus platform + FINISH sign (the start side has the main station)
   {
