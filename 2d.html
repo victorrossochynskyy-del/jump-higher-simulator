@@ -54,6 +54,11 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
 .tbtn:active{background:#7ce2ff66}
 canvas{touch-action:none}
 #warn{position:fixed;top:64px;left:50%;transform:translateX(-50%);background:#ff2222dd;color:#fff;font-weight:900;padding:10px 18px;border-radius:12px;font-size:14px;display:none;z-index:5;animation:blink .5s infinite alternate;pointer-events:none;white-space:nowrap}
+#scoresBtn{position:fixed;right:15px;top:109px;color:#fff;background:#142b50;padding:10px 14px;box-shadow:0 5px 15px #0005;z-index:5}
+#scores{position:fixed;inset:0;background:#0008;display:grid;place-items:center;z-index:10}
+#scores.hidden{display:none}
+#closeScores{position:absolute;right:12px;top:12px;background:#405779;color:white;font-size:24px;width:38px;height:38px}
+#scoreList .item b{font-size:18px;color:#ffd84d;white-space:nowrap}
 @keyframes blink{from{opacity:1}to{opacity:.5}}
 @media(max-width:600px){.stat{min-width:88px}.stat b{font-size:15px}#controls{font-size:9px}#milestoneBar{width:200px}}
 </style>
@@ -81,6 +86,19 @@ canvas{touch-action:none}
 <button id="practiceBtn">PRACTICE: OFF</button>
 <button id="adminBtn">ADMIN</button>
 <div id="announce"></div>
+<button id="scoresBtn">🏆 TOP</button>
+<div id="scores" class="hidden">
+  <div class="panel">
+    <button id="closeScores">×</button>
+    <h1>🏆 Leaderboard</h1>
+    <p>Highest jumpers across everyone playing!</p>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input id="nameInput" placeholder="Enter your name..." maxlength="16" style="flex:1;padding:12px;border-radius:10px;border:0;font-size:15px">
+      <button id="saveName" style="padding:12px 16px;background:#7ce2ff">SAVE</button>
+    </div>
+    <div id="scoreList"></div>
+  </div>
+</div>
 <div id="admin" class="hidden">
   <div class="panel">
     <button id="closeAdmin">×</button>
@@ -139,6 +157,28 @@ const NET_TOPIC="jhsim/7f3a9c2e1b04/admin";
 const NET_KEY="k8v2n5q7w3e1r9t0y4u";
 const myNetId="c"+Math.random().toString(36).slice(2,10);
 let netClient=null,netLive=false;
+// ---- Leaderboard (scores shared live between all players) ----
+const NET_SCORES="jhsim/7f3a9c2e1b04/scores";
+let myName=localStorage.getItem("jh_name")||"";
+let scores={};
+let lastScorePub=0;
+function maybePublishScore(force){
+  if(!netLive||!myName||!netClient)return;
+  const now=Date.now();
+  if(!force&&now-lastScorePub<10000)return;
+  lastScorePub=now;
+  try{netClient.publish(NET_SCORES+"/"+myNetId,JSON.stringify({name:myName.slice(0,16),best:Math.floor(best),power:Math.floor(power),ts:now}),{retain:true})}catch(e){}
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function renderScores(){
+  $("nameInput").value=myName;
+  const rows=Object.entries(scores)
+    .filter(([id,s])=>s&&s.name&&Date.now()-(s.ts||0)<7*864e5)
+    .sort((a,b)=>b[1].best-a[1].best).slice(0,10);
+  $("scoreList").innerHTML=rows.length?rows.map(([id,s],i)=>
+    `<div class="item"><div><h3>${i+1}. ${escapeHtml(s.name)}${id===myNetId?" (YOU)":""}</h3><p>⚡ ${fmt(s.power||0)} power</p></div><b>${fmt(s.best)}m</b></div>`
+  ).join(""):'<p>No scores yet — enter your name and be the first!</p>';
+}
 function netDot(){const d=$("netDot");if(d)d.textContent=netLive?"🟢 LIVE":"🔴 OFF";}
 function netInit(){
   netDot();
@@ -147,12 +187,18 @@ function netInit(){
   let ui=0;
   try{
     netClient=mqtt.connect(urls[ui],{connectTimeout:8000,reconnectPeriod:5000,clientId:myNetId+"_"+Date.now().toString(36)});
-    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}netDot()});
+    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}try{netClient.subscribe(NET_SCORES+"/#")}catch(e){}maybePublishScore(true);netDot()});
     netClient.on("reconnect",()=>{ui=(ui+1)%urls.length});
     netClient.on("close",()=>{netLive=false;netDot()});
     netClient.on("error",()=>{});
     netClient.on("message",(t,buf)=>{
       let m;try{m=JSON.parse(buf.toString())}catch(e){return}
+      if(t.indexOf(NET_SCORES)===0){
+        const id=t.slice(NET_SCORES.length+1);
+        if(id&&m&&m.name)scores[id]={name:String(m.name).slice(0,16),best:m.best|0,power:m.power|0,ts:m.ts|0};
+        if(!$("scores").classList.contains("hidden"))renderScores();
+        return;
+      }
       if(!m||m.key!==NET_KEY||m.from===myNetId)return;
       netApply(m);
     });
@@ -466,6 +512,14 @@ $("adminBtn").onclick=()=>{
   $("admin").classList.remove("hidden");renderAdminLog();
 };
 $("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
+$("scoresBtn").onclick=()=>{$("scores").classList.remove("hidden");renderScores()};
+$("closeScores").onclick=()=>$("scores").classList.add("hidden");
+$("saveName").onclick=()=>{
+  myName=$("nameInput").value.trim().slice(0,16);
+  localStorage.setItem("jh_name",myName);
+  lastScorePub=0;maybePublishScore(true);renderScores();
+  toast(myName?"Playing as "+myName:"Name cleared");
+};
 function armBtn(btn,label,fn){
   if(btn.dataset.armed){
     delete btn.dataset.armed;btn.textContent=label;btn.style.background=label==="💥 WIPE ALL"?"#c22":"#2a7";
@@ -729,7 +783,7 @@ function update(dt){
   }
 
   height=Math.max(0,y);
-  if(height>best){best=height;if(!practice)save()}
+  if(height>best){best=height;if(!practice)save();maybePublishScore()}
   cameraY=Math.max(0,height-230);
   ensureBirds();
   checkMilestones();
