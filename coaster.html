@@ -44,6 +44,13 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
   <button id="stopBtn">⏹ EXIT</button>
 </div>
 
+<div id="done" style="display:none;position:fixed;inset:0;background:#0009;z-index:11;place-items:center;padding:16px">
+  <div class="card" style="text-align:center">
+    <h2>🏁 Ride Complete!</h2>
+    <div class="stats" id="doneStats"></div>
+    <button id="doneBtn" style="width:100%;padding:13px;background:#7ce2ff;color:#102544;font-size:16px">BACK TO PARK</button>
+  </div>
+</div>
 <div id="menu">
   <div>
     <h1 id="menuTitle">🎢 Coaster Park 3D</h1>
@@ -160,24 +167,24 @@ const COASTERS=[
   pts:[[0,3,20],[0,3,2],[0,3,-14],[0,9,-30],[0,16,-48],[0,17,-58],[0,8,-72],[0,4,-82],[0,3.5,-87]]},
  {id:"hyper",name:"Sky Piercer Hyper",type:"STEEL • HYPERCOASTER",thrill:"★★★★★",inv:0,
   desc:"45m lift hill, a near-vertical first drop and giant airtime camelbacks. Tallest in the park.",
-  pts:[[0,3,20],[0,3,2],[0,6,-14],[0,14,-32],[0,26,-50],[0,38,-66],[0,45,-78],[0,44,-86],[0,30,-98],[0,12,-110],[0,5,-122],[0,5,-132],[0,13,-146],[0,6,-160],[0,4,-172],[0,5,-184],[0,11,-196],[0,5,-208],[2,4,-220],[10,4,-230],[18,3,-232],[24,3,-222],[26,3,-205],[24,3,-180],[22,3,-150],[20,3,-110],[20,3,-70],[20,3,-40],[16,3,-18],[10,3,-6],[4,3,6],[0,3,14]]},
+  pts:[[0,3,20],[0,3,2],[0,6,-14],[0,14,-32],[0,26,-50],[0,38,-66],[0,45,-78],[0,44,-86],[0,30,-98],[0,12,-110],[0,5,-122],[0,5,-132],[0,13,-146],[0,6,-160],[0,4,-172],[0,5,-184],[0,11,-196],[0,5,-208],[2,4,-220],[10,4,-230],[18,3,-232],[24,3,-222],[26,3,-205],[24,3,-180],[22,3,-150],[20,3,-110],[20,3,-70],[20,3,-40],[20,3,-10],[20,3,20],[20,3,45]]},
  {id:"twist",name:"Timber Twister",type:"WOODEN • TWISTER",thrill:"★★★★☆",inv:0,
   desc:"Rattling wooden twister with wild banked S-turns through the trees. No loops, all speed.",
-  pts:[[0,3,20],[0,3,2],[0,6,-16],[0,10,-34],[6,9,-50],[-2,8,-64],[-10,7,-78],[-4,6,-92],[4,6,-106],[12,5,-118],[6,4,-132],[-4,4,-146],[-12,4,-160],[-6,5,-174],[2,6,-186],[10,5,-196],[18,4,-204],[26,3,-200],[30,3,-180],[30,3,-140],[30,3,-100],[30,3,-60],[28,3,-30],[22,3,-12],[14,3,-2],[6,3,8],[0,3,16]]},
+  pts:[[0,3,20],[0,3,2],[0,6,-16],[0,10,-34],[6,9,-50],[-2,8,-64],[-10,7,-78],[-4,6,-92],[4,6,-106],[12,5,-118],[6,4,-132],[-4,4,-146],[-12,4,-160],[-6,5,-174],[2,6,-186],[10,5,-196],[18,4,-204],[26,3,-200],[30,3,-180],[30,3,-140],[30,3,-100],[30,3,-60],[28,3,-30],[26,3,0],[26,3,25],[26,3,45]]},
  {id:"kid",name:"Junior Cruiser",type:"FAMILY • GENTLE",thrill:"★★☆☆☆",inv:0,
   desc:"A gentle scenic ride for the little ones. Slow, smooth, no surprises.",
-  pts:[[0,2.5,14],[0,2.5,0],[0,2.5,-20],[0,3.5,-42],[0,3.5,-62],[2,3,-80],[8,2.5,-92],[18,2.5,-96],[28,2.5,-90],[34,2.5,-76],[34,2.5,-56],[30,2.5,-40],[24,3,-32],[18,3.5,-36],[14,3.5,-46],[14,3,-58],[18,2.5,-68],[24,2.5,-70],[27,2.5,-58],[25,2.5,-44],[22,2.5,-34],[14,2.5,-26],[6,2.5,-16],[0,2.5,-6]]}
+  pts:[[0,2.5,14],[0,2.5,0],[0,2.5,-20],[0,3.5,-42],[0,3.5,-62],[2,3,-80],[8,2.5,-92],[16,2.5,-98],[22,2.5,-94],[25,2.5,-84],[25,2.5,-62],[23,2.5,-40],[21,2.5,-18],[20,2.5,2],[20,2.5,20]]}
 ];
 // programmatic inversions
 (function(){
   const loop=COASTERS[0].pts;
   for(let k=0;k<=10;k++){const a=Math.PI+k/10*Math.PI*2;loop.push([0,10.5+7*Math.cos(a),-100+7*Math.sin(a)])}
-  loop.push([0,4,-109],[2,5,-121],[8,5,-131],[16,4,-135],[16,3,-110],[16,3,-70],[16,3,-35],[12,3,-14],[6,3,-3],[0,3,9]);
+  loop.push([0,4,-109],[2,5,-121],[8,5,-131],[16,4,-135],[16,3,-110],[16,3,-70],[16,3,-35],[16,3,0],[16,3,25],[16,3,45]);
   const c=COASTERS[1].pts;
   cork(c,0,6.5,-91,24,2.5,10);
   c.push([0,3.5,-121],[0,3.5,-127]);
   cork(c,0,6.5,-129,24,2.5,10);
-  c.push([0,4,-161],[3,4,-173],[10,4,-181],[16,3,-178],[16,3,-140],[16,3,-100],[16,3,-60],[16,3,-32],[12,3,-13],[6,3,-2],[0,3,10]);
+  c.push([0,4,-161],[3,4,-173],[10,4,-181],[16,3,-178],[16,3,-140],[16,3,-100],[16,3,-60],[16,3,-32],[16,3,0],[16,3,25],[16,3,45]);
 })();
 
 const railMat=new THREE.MeshLambertMaterial({color:0xd23c3c});
@@ -188,19 +195,24 @@ const cache={};
 
 function computeTrack(def){
   if(cache[def.id])return cache[def.id];
-  const curve=new THREE.CatmullRomCurve3(def.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])),true,"catmullrom",.08);
-  const N=1400,spaced=curve.getSpacedPoints(N);
-  spaced.pop(); // N points, closed
+  const curve=new THREE.CatmullRomCurve3(def.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])),false,"catmullrom",.08);
+  const N=1400;
+  const spaced=curve.getSpacedPoints(N); // N+1 points, open point-to-point: station one end, terminus the other
+  // gentle smoothing passes iron out kinks so the ride isn't crooked (endpoints fixed)
+  for(let k=0;k<3;k++){
+    const src=spaced.map(p=>p.clone());
+    for(let i=1;i<N;i++)spaced[i].copy(src[i].multiplyScalar(.5).addScaledVector(src[i-1],.25).addScaledVector(src[i+1],.25));
+  }
   // cumulative length
   const cum=[0];
-  for(let i=1;i<=N;i++){const a=spaced[i-1],b=spaced[i%N];cum.push(cum[i-1]+a.distanceTo(b))}
+  for(let i=1;i<=N;i++){const a=spaced[i-1],b=spaced[i];cum.push(cum[i-1]+a.distanceTo(b))}
   const L=cum[N],ds=L/N;
   // tangents
   const T=[];
-  for(let i=0;i<N;i++)T.push(spaced[(i+1)%N].clone().sub(spaced[(i-1+N)%N]).normalize());
+  for(let i=0;i<=N;i++){const a=spaced[Math.max(0,i-1)],b=spaced[Math.min(N,i+1)];T.push(b.clone().sub(a).normalize())}
   // parallel-transport up/side frames (stable through loops)
   const UP=[],SIDE=[];let up=new THREE.Vector3(0,1,0);
-  for(let i=0;i<N;i++){
+  for(let i=0;i<=N;i++){
     const t=T[i];
     let u=up.clone().sub(t.clone().multiplyScalar(up.dot(t)));
     if(u.lengthSq()<1e-6)u=new THREE.Vector3(1,0,0).sub(t.clone().multiplyScalar(t.x));
@@ -215,7 +227,7 @@ function computeTrack(def){
     maxH:Math.max(...spaced.map(p=>p.y)),len:L,isWood:def.id==="twist",id:def.id};
   // inversions: count transitions into upside-down
   let inv=0,wasUp=true;
-  for(let i=0;i<N;i+=10){const u=UP[i].y<0;if(u&&wasUp){inv++;wasUp=false}if(!u)wasUp=true}
+  for(let i=0;i<=N;i+=10){const u=UP[i].y<0;if(u&&wasUp){inv++;wasUp=false}if(!u)wasUp=true}
   built.inv=inv;
   cache[def.id]=built;
   return built;
@@ -240,20 +252,20 @@ function buildMeshes(built){
   for(const sd of [-0.55,0.55]){
     const rp=spaced.map((p,i)=>p.clone().addScaledVector(SIDE[i],sd).addScaledVector(UP[i],.15));
     g.add(new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rp,true),500,.13,6,true),
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rp,false),500,.13,6,false),
       isWood?woodMat:railM));
   }
   // center spine beam (steel coasters, like the real tubular-track ones)
   if(!isWood){
     const spine=spaced.map((p,i)=>p.clone().addScaledVector(UP[i],-.55));
     g.add(new THREE.Mesh(
-      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(spine,true),400,.24,6,true),
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(spine,false),400,.24,6,false),
       railM));
   }
   // sleepers
   const tieGeo=new THREE.BoxGeometry(1.5,.14,.34);
   const m4=new THREE.Matrix4();
-  for(let i=0;i<N;i+=9){
+  for(let i=0;i<=N;i+=9){
     const tie=new THREE.Mesh(tieGeo,tieMat);
     const xA=new THREE.Vector3().crossVectors(UP[i],T[i]).normalize();
     const yA=new THREE.Vector3().crossVectors(T[i],xA).normalize();
@@ -263,13 +275,13 @@ function buildMeshes(built){
     g.add(tie);
   }
   // supports (white A-frames; skipped wherever they'd stab another rail section or the station)
-  for(let i=0;i<N;i+=46){
+  for(let i=0;i<=N;i+=46){
     const p=spaced[i],h=p.y-.4;
     if(h<1.5)continue;
     if(Math.abs(p.x)<4&&p.z>-10&&p.z<24&&p.y<8)continue; // station area
     let bang=false;
-    for(let j=0;j<N;j+=4){
-      const d=Math.abs(j-i);if(d<40||d>N-40)continue; // ignore our own section
+    for(let j=0;j<=N;j+=4){
+      const d=Math.abs(j-i);if(d<40)continue; // same section (open track, no wrap)
       const q=spaced[j];
       const t=Math.max(0,Math.min(1,q.y/h));
       const dx=p.x-q.x,dz=p.z-q.z,dy=t*h-q.y;
@@ -287,6 +299,22 @@ function buildMeshes(built){
     }
     const bar=new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,3,6),supM);
     bar.rotation.z=Math.PI/2;bar.position.set(p.x,h*.55,p.z);g.add(bar);
+  }
+  // terminus platform + FINISH sign (the start side has the main station)
+  {
+    const e=spaced[N],te=T[N];
+    const seH=new THREE.Vector3(te.z,0,-te.x).normalize();
+    const yaw=Math.atan2(te.x,te.z);
+    const eplat=new THREE.Mesh(new THREE.BoxGeometry(7,.6,20),new THREE.MeshLambertMaterial({color:0x8d8d8d}));
+    eplat.position.set(e.x+seH.x*4.5,e.y-.3,e.z+seH.z*4.5);eplat.rotation.y=yaw;g.add(eplat);
+    for(const off of [-6,6]){
+      const post=new THREE.Mesh(new THREE.CylinderGeometry(.25,.25,4.5,8),supM);
+      post.position.set(e.x+seH.x*4.5+te.x*off,(e.y-.3)+2.5,e.z+seH.z*4.5+te.z*off);g.add(post);
+    }
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(8,.4,22),new THREE.MeshLambertMaterial({color:0xb33939}));
+    roof.position.set(e.x+seH.x*4.5,(e.y-.3)+4.8,e.z+seH.z*4.5);roof.rotation.y=yaw;g.add(roof);
+    const sign=new THREE.Mesh(new THREE.BoxGeometry(7,1.8,.4),new THREE.MeshLambertMaterial({color:0xffd84d}));
+    sign.position.set(e.x+seH.x*4.5,(e.y-.3)+6,e.z+seH.z*4.5);sign.rotation.y=yaw;g.add(sign);
   }
   built.group=g;
   return g;
@@ -340,12 +368,12 @@ for(let c=0;c<4;c++){const cart=buildCart(c,c===0);scene.add(cart);train.push(ca
 train.forEach(t=>t.visible=false);
 
 // ============================== RIDE STATE ==============================
-let built=null,riding=false,s=0,v=0,rideT=0,camMode=0,bank=0,clackAcc=0,liftAcc=0,lastScream=0,maxG=0,gSmooth=1,camSnap=true;
+let built=null,riding=false,s=0,v=0,rideT=0,camMode=0,bank=0,clackAcc=0,liftAcc=0,lastScream=0,maxG=0,maxV=0,gSmooth=1,camSnap=true;
 const _m4=new THREE.Matrix4(),_p=new THREE.Vector3(),_x=new THREE.Vector3(),_y=new THREE.Vector3(),_up=new THREE.Vector3(),_t=new THREE.Vector3(),_ta=new THREE.Vector3(),_tb=new THREE.Vector3(),_tl=new THREE.Vector3(),camP=new THREE.Vector3(0,30,60),camL=new THREE.Vector3(0,8,-110);
 
 function posAt(sDist,out){
-  const N=built.N;let f=((sDist/built.L)*N)%N;if(f<0)f+=N;
-  const i0=Math.floor(f),fr=f-i0,i1=(i0+1)%N;
+  const N=built.N;let f=Math.max(0,Math.min(N,(sDist/built.L)*N));
+  const i0=Math.min(N-1,Math.floor(f)),fr=f-i0,i1=i0+1;
   return out.copy(built.spaced[i0]).lerp(built.spaced[i1],fr);
 }
 function sampleAt(sDist){
@@ -353,15 +381,15 @@ function sampleAt(sDist){
   // wide-baseline tangent (±2.5m) so the facing doesn't jitter on rough spots
   posAt(sDist+2.5,_ta);posAt(sDist-2.5,_tb);
   _t.copy(_ta).sub(_tb).normalize();
-  const N=built.N;let f=((sDist/built.L)*N)%N;if(f<0)f+=N;
-  const i0=Math.floor(f),fr=f-i0,i1=(i0+1)%N;
+  const N=built.N;let f=Math.max(0,Math.min(N,(sDist/built.L)*N));
+  const i0=Math.min(N-1,Math.floor(f)),fr=f-i0,i1=i0+1;
   _up.copy(built.UP[i0]).lerp(built.UP[i1],fr).normalize();
   return i0;
 }
 function slopeAt(sDist){
-  const N=built.N;let f=((sDist/built.L)*N)%N;if(f<0)f+=N;
+  const N=built.N;let f=Math.max(0,Math.min(N,(sDist/built.L)*N));
   const i0=Math.floor(f);
-  const a=built.spaced[(i0-4+N)%N],b=built.spaced[(i0+4)%N];
+  const a=built.spaced[Math.max(0,i0-4)],b=built.spaced[Math.min(N,i0+4)];
   return (b.y-a.y)/(8*built.ds);
 }
 function startRide(def){
@@ -371,14 +399,21 @@ function startRide(def){
     built=computeTrack(def);
     scene.add(buildMeshes(built));
   }catch(err){alert("Couldn't load this coaster: "+err.message);return}
-  s=0;v=0;rideT=0;bank=0;maxG=0;camSnap=true;gSmooth=1;
+  s=3*3.4;v=0;rideT=0;bank=0;maxG=0;maxV=0;camSnap=true;gSmooth=1;$("done").style.display="none";
   train.forEach(t=>t.visible=true);
   riding=true;
   $("menu").classList.add("hidden");
 }
-function stopRide(){riding=false;$("menu").classList.remove("hidden")}
+function stopRide(){riding=false;$("menu").classList.remove("hidden");$("done").style.display="none"}
+function finishRide(){
+  riding=false;
+  $("doneStats").innerHTML="⏱ Time: "+Math.round(rideT)+"s<br>🚀 Top speed: "+Math.round(maxV*3.6)+" km/h<br>🌀 Max G: "+maxG.toFixed(1)+"g";
+  $("done").style.display="grid";
+  tone(523,784,.3);setTimeout(()=>tone(659,988,.3),150);setTimeout(()=>tone(784,1319,.5),300);
+}
 
 $("stopBtn").onclick=stopRide;
+$("doneBtn").onclick=()=>{$("done").style.display="none";stopRide()};
 $("camBtn").onclick=()=>{camMode=(camMode+1)%2;toastCam()};
 $("soundBtn").onclick=()=>{soundOn=!soundOn;$("soundBtn").textContent=soundOn?"🔊 SOUND":"🔇 MUTED";if(windGain)windGain.gain.value=0};
 function toastCam(){}
@@ -412,13 +447,15 @@ function loop(now){
     dyds=slopeAt(s);
     v+=(-9.81*dyds-0.02*v-0.3)*h;
     if(s<built.sLift)v=Math.max(v,9);      // chain lift
-    v=Math.max(4,Math.min(46,v));          // no rollback, top speed
+    v=Math.max(4,Math.min(40,v));if(v>maxV)maxV=v; // no rollback, calmer top speed
     s=(s+v*h)%built.L;
   }
+  if(s>built.L-80)v=Math.min(v,Math.max(5,4+(built.L-s)*.18)); // brake run into the terminus
+  if(s>=built.L-3){finishRide();return}
   rideT+=dt;
   const i0=sampleAt(s);
   // banking from lateral curvature (wide baseline = no twitching)
-  const iA=(i0-12+built.N)%built.N,iB=(i0+12)%built.N;
+  const iA=Math.max(0,i0-12),iB=Math.min(built.N,i0+12);
   const lat=built.T[iB].clone().sub(built.T[iA]).dot(built.SIDE[i0])/(24*built.ds);
   const bankT=Math.max(-1.05,Math.min(1.05,Math.atan(v*v*lat/9.81)));
   bank+=(bankT-bank)*Math.min(1,dt*4);
@@ -429,7 +466,7 @@ function loop(now){
   // --- train cars ---
   const gap=3.4;
   for(let c=0;c<train.length;c++){
-    const sc=((s-c*gap)%built.L+built.L)%built.L;
+    const sc=Math.max(0,s-c*gap);
     const ii=sampleAt(sc);
     const upR=_up.clone().applyAxisAngle(_t,bank);
     _x.crossVectors(upR,_t).normalize();
