@@ -38,6 +38,7 @@ button{border:0;border-radius:12px;font-weight:bold;cursor:pointer}
   <div class="stat"><small>G-FORCE</small><b id="gforce">1.0g</b></div>
   <div class="stat"><small>RIDE TIME</small><b id="rtime">0s</b></div>
 </div>
+<div id="launchMsg" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);font-size:34px;font-weight:900;color:#7dff8a;text-shadow:0 3px 10px #000;z-index:6;pointer-events:none;white-space:nowrap"></div>
 <div id="rideBtns">
   <button id="camBtn">🎥 CAM</button>
   <button id="soundBtn">🔊 SOUND</button>
@@ -413,6 +414,7 @@ train.forEach(t=>t.visible=false);
 
 // ============================== RIDE STATE ==============================
 let built=null,riding=false,s=0,v=0,rideT=0,camMode=0,bank=0,clackAcc=0,liftAcc=0,lastScream=0,maxG=0,maxV=0,gSmooth=1,camSnap=true;
+let launchPhase=null,waitT=0,lastCount=0,launchAnchor=null; // Kingda Ka staging: roll -> wait -> go
 const _m4=new THREE.Matrix4(),_p=new THREE.Vector3(),_x=new THREE.Vector3(),_y=new THREE.Vector3(),_up=new THREE.Vector3(),_t=new THREE.Vector3(),_ta=new THREE.Vector3(),_tb=new THREE.Vector3(),_tl=new THREE.Vector3(),camP=new THREE.Vector3(0,30,60),camL=new THREE.Vector3(0,8,-110);
 
 function posAt(sDist,out){
@@ -444,12 +446,20 @@ function startRide(def){
     scene.add(buildMeshes(built));
   }catch(err){alert("Couldn't load this coaster: "+err.message);return}
   s=3*3.4;v=0;rideT=0;bank=0;maxG=0;maxV=0;camSnap=true;gSmooth=1;$("done").style.display="none";
+  launchPhase=def.launch?"roll":null;waitT=0;lastCount=0;launchAnchor=null;
   train.forEach(t=>t.visible=true);
   if(def.launch){tone(80,1400,3,"sawtooth",.18);setTimeout(()=>tone(60,300,2.5,"square",.12),200)}
   riding=true;
   $("menu").classList.add("hidden");
 }
 function stopRide(){riding=false;$("menu").classList.remove("hidden");$("done").style.display="none"}
+function launchCountdown(t){
+  const el=$("launchMsg");
+  if(t<1.2){el.textContent="🟢 ARMS DOWN — HEAD BACK!";return}
+  const n=Math.ceil(3.5-t);
+  if(n>=1&&n!==lastCount){lastCount=n;el.textContent=n+"...";tone(440+n*110,440+n*110,.15,"square",.15)}
+  if(t>=3.4){el.textContent="🚀 LAUNCH!!";tone(80,1400,2.5,"sawtooth",.18)}
+}
 function finishRide(){
   riding=false;
   $("doneStats").innerHTML="⏱ Time: "+Math.round(rideT)+"s<br>🚀 Top speed: "+Math.round(maxV*3.6)+" km/h<br>🌀 Max G: "+maxG.toFixed(1)+"g";
@@ -492,8 +502,12 @@ function loop(now){
   for(let st=0;st<steps;st++){
     dyds=slopeAt(s);
     v+=(-9.81*dyds-0.02*v-0.3)*h;
-    if(s<built.sLift)v=Math.max(v,built.lift);      // chain/cable lift
-    if(built.launch&&s<built.launch.until)v+=(built.launch.target-v)*Math.min(1,dt*0.9); // hydraulic launch
+    if(!built.launch&&s<built.sLift)v=Math.max(v,built.lift); // chain/cable lift
+    if(built.launch){
+      if(launchPhase==="roll"){v+=(8-v)*Math.min(1,dt*2);if(s>=40){launchPhase="wait";waitT=0;lastCount=0;v=0}}
+      else if(launchPhase==="wait"){v=0;waitT+=dt;launchCountdown(waitT);if(waitT>=3.5){launchPhase="go"}}
+      else v+=(built.launch.target-v)*Math.min(1,dt*0.9); // hydraulic launch
+    }
     v=Math.max(4,Math.min(40,v));if(v>maxV)maxV=v; // no rollback, calmer top speed
     s=(s+v*h)%built.L;
   }
@@ -512,6 +526,7 @@ function loop(now){
   gSmooth+=(g-gSmooth)*Math.min(1,dt*6);
   // --- train cars ---
   const gap=3.4;
+  const calm=(built.launch&&s<built.launch.until+20)?0:1; // no twirl rattle on the launch straight
   for(let c=0;c<train.length;c++){
     const sc=Math.max(0,s-c*gap);
     const ii=sampleAt(sc);
@@ -521,14 +536,25 @@ function loop(now){
     _m4.makeBasis(_x,_y,_t);
     train[c].quaternion.setFromRotationMatrix(_m4);
     train[c].position.copy(_p);
-    train[c].rotateZ(Math.sin(rideT*13+c*1.7)*Math.min(.05,v/46*.08)); // rail rattle sway
+    train[c].rotateZ(Math.sin(rideT*13+c*1.7)*Math.min(.05,v/46*.08)*calm); // rail rattle sway
     train[c].position.y+=Math.sin(rideT*17+c*2.3)*Math.min(.06,v/46*.1);
   }
   // --- camera (damped so bumps don't whip your view) ---
   sampleAt(s);
   _tb.copy(_p).addScaledVector(_up,2.3); // rider head
   const lookDist=12+v*.4;
-  if(camMode===0){
+  const inLaunchView=riding&&built&&built.launch&&s<175;
+  if(inLaunchView){
+    // trackside launch cam: parked ahead, watching the nose come at you
+    if(!launchAnchor){
+      posAt(70,_ta);
+      const sd=new THREE.Vector3().crossVectors(_t,new THREE.Vector3(0,1,0)).normalize();
+      launchAnchor=_ta.clone().addScaledVector(sd,11);launchAnchor.y+=5;
+    }
+    _ta.copy(launchAnchor);
+    _tl.copy(_p).addScaledVector(_up,1.5);
+    camera.up.set(0,1,0); // dead level horizon on the straight
+  }else if(camMode===0){
     _ta.copy(_tb);
     _tl.copy(_p).addScaledVector(_t,lookDist).addScaledVector(_up,.5);
   }else{
@@ -543,6 +569,13 @@ function loop(now){
   camL.lerp(_tl,1-Math.exp(-dt*10));
   camera.position.copy(camP);
   camera.lookAt(camL);
+  // launch staging banner
+  const lm=$("launchMsg");
+  if(riding&&built&&built.launch&&launchPhase){
+    lm.style.display="block";
+    if(launchPhase==="go"&&s<built.launch.until+40)lm.textContent="🚀 LAUNCH!!";
+    else if(launchPhase!=="wait")lm.style.display="none";
+  }else lm.style.display="none";
   // --- sounds ---
   if(windGain){
     const w=soundOn?Math.min(.5,(v/46)*(v/46)*.6):0;
@@ -551,7 +584,7 @@ function loop(now){
   }
   clackAcc+=v*dt;
   if(clackAcc>12.5){clackAcc=0;if(soundOn)clack()}
-  if(s<built.sLift){liftAcc+=dt;if(liftAcc>.35){liftAcc=0;if(soundOn)chainRattle()}}
+  if(!built.launch&&s<built.sLift){liftAcc+=dt;if(liftAcc>.35){liftAcc=0;if(soundOn)chainRattle()}}
   if(dyds<-.45&&v>22&&now-lastScream>2800){lastScream=now;if(soundOn)scream()}
   // --- HUD ---
   $("speed").textContent=Math.round(v*3.6)+" km/h";
