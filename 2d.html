@@ -113,7 +113,7 @@ canvas{touch-action:none}
     <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx • /ban • /rename • /powerreset</p>
   </div>
 </div>
-<div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL FASTER • J = JETPACK • F = PARRY • E = SHOP</div>
+<div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL • J = JETPACK • F = PARRY • G/R = SWORDS (50k+) • E = SHOP</div>
 <div id="touch">
   <div class="tcluster">
     <button class="tbtn" id="tLeft">◀</button>
@@ -124,6 +124,10 @@ canvas{touch-action:none}
       <div class="trow">
         <button class="tbtn" id="tJet">🚀</button>
         <button class="tbtn" id="tFall">⬇</button>
+      </div>
+      <div class="trow">
+        <button class="tbtn" id="tSpin">⚔️</button>
+        <button class="tbtn" id="tStrike">🎯</button>
       </div>
       <div class="trow">
         <button class="tbtn" id="tParry">💥</button>
@@ -271,9 +275,11 @@ const keys={};
 addEventListener("keydown",e=>{
   if(e.target&&e.target.tagName==="INPUT")return; // don't hijack typing in admin box
   keys[e.key.toLowerCase()]=true;
-  if(e.code==="Space"){e.preventDefault();jump()}
+  if(e.code==="Space"){e.preventDefault();if(cinema){if(cinema.shown>=cinema.text.length)advanceCinema()}else jump()}
   if(e.key.toLowerCase()==="e")$("shop").classList.toggle("hidden");
   if(e.key.toLowerCase()==="f"&&!e.repeat)tryParry();
+  if(e.key.toLowerCase()==="g"&&!e.repeat)swordSpin();
+  if(e.key.toLowerCase()==="r"&&!e.repeat)swordStrike();
 });
 addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 
@@ -293,13 +299,16 @@ if(touchMode){
   hold("tFall",()=>keys.s=true,()=>keys.s=false);
   hold("tJump",()=>jump());
   hold("tParry",()=>tryParry());
+  hold("tSpin",()=>swordSpin());
+  hold("tStrike",()=>swordStrike());
 }
 
 let saved=JSON.parse(localStorage.getItem("jumpHigherSave")||"null")||{
   money:0,best:0,power:10,rebirths:0,
-  feather:false,jetpack:false,magnet:false,cloud:false,doubleJump:false
+  feather:false,jetpack:false,magnet:false,cloud:false,doubleJump:false,swords:false,village:false,bossBeaten:false
 };
 let money=saved.money,best=saved.best,power=saved.power,rebirths=saved.rebirths;
+let swords=!!saved.swords,village=!!saved.village;
 let height=0,x=0,y=0,vx=0,vy=0,cameraY=0,combo=0,practice=false;
 let birds=[],particles=[],clouds=[],fireballs=[],lastBirdId=0,last=performance.now(),jumpHeld=false;
 let totalJumps=0,totalBirdsHit=0,maxCombo=0;
@@ -313,6 +322,10 @@ let trailPoints=[]; // jump trail
 let parryCooldown=0,parryFlash=0,parries=0;
 let fireballTimer=0; // minimum gap between fireball spawns
 let zone=0; // 0=fire zone, 1=purple void (10k), 2=dark ghosts (20k)
+// ---- ENDGAME: swords (50k), boss (75k), burning village ----
+let swordAng=0,spinT=0,spinCD=0,strikeCD=0,slashes=[];
+let bossMode=false,bossKills=0,bossT=0,mouthOpen=false,mouthT=0,bossX=0;
+let cinema=null; // {mode,text,shown,t,vphase}
 function zoneFor(h){return h>=20000?2:h>=10000?1:0}
 function checkZone(){
   const z=zoneFor(height);
@@ -351,7 +364,7 @@ function save(){
   localStorage.setItem("jumpHigherSave",JSON.stringify({
     money,best,power,rebirths,
     feather:saved.feather,jetpack:saved.jetpack,
-    magnet:saved.magnet,cloud:saved.cloud,doubleJump:saved.doubleJump
+    magnet:saved.magnet,cloud:saved.cloud,doubleJump:saved.doubleJump,swords,village,bossBeaten:saved.bossBeaten
   }));
 }
 function fmt(n){return Math.floor(n).toLocaleString()}
@@ -406,6 +419,7 @@ for(let i=0;i<30;i++)clouds.push({x:Math.random()*W,y:Math.random()*H,s:30+Math.
 
 function jump(){
   initAudio();
+  if(bossMode||cinema)return;
   if(y<=.01){
     // EVERY ground jump goes higher than the last:
     // 1) permanent training gain (+0.3 power per jump)
@@ -548,6 +562,7 @@ function doWipe(){
 function fullWipe(){
   money=0;best=0;power=10;rebirths=0;combo=0;
   saved.feather=saved.jetpack=saved.magnet=saved.cloud=saved.doubleJump=false;
+  swords=false;village=false;bossMode=false;bossKills=0;cinema=null;
   try{groundStreak=0;totalJumps=0;totalBirdsHit=0;maxCombo=0;parries=0;jumpsUsed=0}catch(e){}
   save();updateHUD();
 }
@@ -727,6 +742,7 @@ function tryParry(){
       combo++;if(combo>maxCombo)maxCombo=combo;
       addMoney(p?150:60);
     }
+    if(bossMode){bossKills+=hits.length;comboPopup(bossKills+"/30")}
     parries+=hits.length;
     vy=Math.max(vy,perfect?34+power*.5:24+power*.3); // parry launches you upward
     if(hits.length>1){toast("💥 DOUBLE PARRY!");comboPopup(hits.length+"x PARRY!");}
@@ -806,9 +822,173 @@ function checkMilestones(){
   }
 }
 
+// ================= ENDGAME: swords, boss, cutscenes =================
+function swordSpin(){
+  initAudio();
+  if(!swords){toast("Reach 50,000m to awaken swords!");return}
+  if(spinCD>0)return;
+  spinCD=3;spinT=.7;shakeT=Math.max(shakeT,.3);
+  playTone(300,.3,"sawtooth",.15);
+  setTimeout(()=>playTone(500,.2,"sawtooth",.12),100);
+}
+function swordStrike(){
+  initAudio();
+  if(!swords){toast("Reach 50,000m to awaken swords!");return}
+  if(strikeCD>0)return;
+  strikeCD=1;
+  const px=W/2+x,py=screenY(y);
+  const near=fireballs.map(f=>({f,d:Math.hypot(px-f.x,py-f.y)})).filter(o=>o.f.life>0&&o.d<460).sort((a,b)=>a.d-b.d).slice(0,3);
+  for(const o of near){
+    o.f.life=0;
+    slashes.push({x1:px,y1:py,x2:o.f.x,y2:o.f.y,life:1});
+    boom(o.f.x,o.f.y,22,["#ffffff","#7ce2ff","#aee5ff","#ffd84d"]);
+    shockwaves.push({x:o.f.x,y:o.f.y,r:10,max:80,life:1,color:"#7ce2ff"});
+    addMoney(120);combo++;if(combo>maxCombo)maxCombo=combo;
+    if(bossMode){bossKills++;comboPopup(bossKills+"/30")}
+    playTone(700,.12,"square",.12);
+  }
+  if(!near.length)playTone(180,.08,"square",.06);
+}
+function startIntro(){
+  cinema={mode:"intro",text:"You know this isnt over ...",shown:0,t:0};
+  playTone(110,.8,"sawtooth",.15);
+}
+function startBoss(){
+  cinema=null;bossMode=true;bossKills=0;bossT=0;mouthOpen=false;mouthT=0;swords=true;
+  fireballs.length=0;
+  y=75000;vy=0;combo=0;
+  save();
+  toast("👹 METEOR KING! Kill 30! Press R!");
+  playMilestoneSound();
+}
+function startWin(){
+  bossMode=false;fireballs.length=0;
+  saved.bossBeaten=true;save();
+  cinema={mode:"win",text:"you made it... There is more coming soon. Get prepared.",shown:0,t:0,vphase:0};
+  playMilestoneSound();
+}
+function enterVillage(){
+  cinema=null;village=true;saved.village=true;save();
+  y=0;vy=0;vx=0;combo=0;bossKills=0;fireballs.length=0;particles.length=0;
+  toast("🔥 THE BURNING VILLAGE");
+  playMilestoneSound();
+}
+function advanceCinema(){
+  if(!cinema)return;
+  if(cinema.mode==="intro")startBoss();
+  else if(cinema.mode==="win")enterVillage();
+}
+function drawSwords(){
+  if(!swords)return;
+  const px=W/2+x,py=screenY(y);
+  const R=spinT>0?220:70;
+  for(let i=0;i<5;i++){
+    const a=swordAng+i*Math.PI*2/5;
+    const sx=px+Math.cos(a)*R,sy2=py+Math.sin(a)*R*.6;
+    ctx.save();ctx.translate(sx,sy2);ctx.rotate(a+Math.PI/2);
+    ctx.fillStyle="#dfe9f5";ctx.fillRect(-3,-22,6,20);
+    ctx.beginPath();ctx.moveTo(-3,-22);ctx.lineTo(3,-22);ctx.lineTo(0,-30);ctx.fill();
+    ctx.fillStyle="#8a97a8";ctx.fillRect(-3,-2,6,4);
+    ctx.fillStyle="#5a3a1a";ctx.fillRect(-2,2,4,8);
+    ctx.restore();
+  }
+}
+function drawSlashes(){
+  for(const s of slashes){
+    ctx.globalAlpha=Math.max(0,s.life);
+    ctx.strokeStyle="#aee5ff";ctx.lineWidth=4;
+    ctx.beginPath();ctx.moveTo(s.x1,s.y1);ctx.lineTo(s.x2,s.y2);ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+}
+function drawBoss(){
+  const bx=bossX,by=110;
+  drawFireball({x:bx,y:by,r:64,flicker:performance.now()*.004,type:"fire"});
+  // crown spikes
+  ctx.save();ctx.translate(bx,by-58);
+  ctx.fillStyle="#ffd84d";
+  for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(i*22-9,-6);ctx.lineTo(i*22,-38+Math.abs(i)*6);ctx.lineTo(i*22+9,-6);ctx.fill()}
+  ctx.restore();
+  // eyes
+  ctx.fillStyle="#fff";
+  ctx.beginPath();ctx.arc(bx-22,by-14,11,0,7);ctx.arc(bx+22,by-14,11,0,7);ctx.fill();
+  ctx.fillStyle="#c00";
+  ctx.beginPath();ctx.arc(bx-22,by-14,5,0,7);ctx.arc(bx+22,by-14,5,0,7);ctx.fill();
+  // mouth (opens to summon meteors)
+  if(mouthOpen){
+    ctx.fillStyle="#200";
+    ctx.beginPath();ctx.ellipse(bx,by+26,22,18+Math.sin(bossT*10)*5,0,0,7);ctx.fill();
+    ctx.fillStyle="#ff5500";ctx.beginPath();ctx.arc(bx,by+30,9,0,7);ctx.fill();
+  }else{ctx.fillStyle="#200";ctx.fillRect(bx-22,by+20,44,7)}
+  // kill counter + hint
+  ctx.fillStyle="#fff";ctx.font="bold 22px Arial";ctx.textAlign="center";
+  ctx.fillText("👹 "+bossKills+"/30",bx,by+96);ctx.textAlign="left";
+  if(mouthOpen){ctx.fillStyle="#ffe14d";ctx.font="bold 18px Arial";ctx.textAlign="center";ctx.fillText("PRESS R!",bx,by+120);ctx.textAlign="left"}
+}
+function drawBurningVillage(t){
+  ctx.fillStyle="#1a0d05";ctx.fillRect(0,H-140,W,140);
+  const houses=[[W*.12,0],[W*.32,20],[W*.55,10],[W*.78,30]];
+  for(const hh of houses){
+    const hx=hh[0],by=H-140+hh[1];
+    ctx.fillStyle="#0d0d0d";
+    ctx.fillRect(hx-40,by-70,80,70);
+    ctx.beginPath();ctx.moveTo(hx-48,by-70);ctx.lineTo(hx,by-110);ctx.lineTo(hx+48,by-70);ctx.fill();
+    ctx.fillStyle=`rgba(255,${100+Math.floor(Math.sin(t*9+hx)*60)},0,.9)`;
+    ctx.fillRect(hx-12,by-50,24,24);
+    for(let i=0;i<6;i++){
+      const fx=hx-36+i*14,fl=26+Math.sin(t*7+i*1.7+hx)*12;
+      ctx.fillStyle=i%2?"#ff6611":"#ffcc33";
+      ctx.beginPath();ctx.moveTo(fx,by-70);ctx.quadraticCurveTo(fx+7,by-70-fl,fx+14,by-70);ctx.fill();
+    }
+  }
+  // looming boss silhouette
+  const bx=W/2+Math.sin(t*.8)*60,byy=130+Math.sin(t*1.3)*10;
+  ctx.fillStyle="#050505";
+  ctx.beginPath();ctx.arc(bx,byy,70,0,7);ctx.fill();
+  ctx.globalAlpha=Math.sin(t*3)>0?1:.3;
+  ctx.fillStyle="#ff2222";
+  ctx.beginPath();ctx.arc(bx-22,byy-10,9,0,7);ctx.arc(bx+22,byy-10,9,0,7);ctx.fill();
+  ctx.globalAlpha=1;
+  // rising embers
+  ctx.fillStyle="#ff8833";
+  for(let i=0;i<40;i++){
+    const ex=(i*97+t*40)%W,ey=H-((i*61+t*90)%H);
+    ctx.globalAlpha=.5+.5*Math.sin(t*5+i);
+    ctx.fillRect(ex,ey,3,3);
+  }
+  ctx.globalAlpha=1;
+}
+function drawCinema(){
+  ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);
+  if(cinema.mode==="win")drawBurningVillage(cinema.vphase||0);
+  const txt=cinema.text.slice(0,cinema.shown);
+  ctx.fillStyle="#fff";ctx.font="bold 24px Courier New,monospace";ctx.textAlign="center";
+  const words=txt.split(" "),lines=[""];
+  for(const w of words){
+    if((lines[lines.length-1]+" "+w).length>32)lines.push(w);
+    else lines[lines.length-1]=lines[lines.length-1]?lines[lines.length-1]+" "+w:w;
+  }
+  const bh=H/2-(lines.length-1)*18-20;
+  lines.forEach((L,i)=>ctx.fillText(L+(i===lines.length-1&&cinema.shown<cinema.text.length?"▌":""),W/2,bh+i*36));
+  ctx.textAlign="left";
+  if(cinema.shown>=cinema.text.length){
+    ctx.fillStyle="#aee5ff";ctx.font="bold 14px Arial";ctx.textAlign="center";
+    ctx.fillText(cinema.mode==="win"?"SPACE — enter the burning village":"SPACE — FIGHT!",W/2,bh+lines.length*36+20);
+    ctx.textAlign="left";
+  }
+}
+
 function update(dt){
   // Freeze everything while shopping so meteors can't hit you
   if(!$("shop").classList.contains("hidden"))return;
+  if(!$("admin").classList.contains("hidden"))return;
+  // Cutscene freeze (typewriter still advances)
+  if(cinema){
+    cinema.t+=dt;
+    cinema.shown=Math.min(cinema.text.length,Math.floor(cinema.t/.035));
+    if(cinema.mode==="win")cinema.vphase=(cinema.vphase||0)+dt;
+    return;
+  }
   if(keys.a)vx-=28*dt;
   if(keys.d)vx+=28*dt;
   vx*=Math.pow(.05,dt);
@@ -820,7 +1000,8 @@ function update(dt){
   }
   if(!keys.j)jumpHeld=false;
 
-  if(y>0||vy>0){
+  if(bossMode){y=75000;vy=0}
+  if(!bossMode&&(y>0||vy>0)){
     const gravity=saved.feather?14:23;
     vy-=gravity*dt*(keys.s?2:1);
     y+=vy*dt;
@@ -833,6 +1014,8 @@ function update(dt){
   ensureBirds();
   checkMilestones();
   checkZone();
+  if(!swords&&height>=50000){swords=true;save();toast("⚔️ SWORDS AWAKEN! Press G!");playMilestoneSound()}
+  if(!bossMode&&!cinema&&height>=75000){saved.bossBeaten?startBoss():startIntro()}
 
   // Jump trail
   if(vy>5){
@@ -846,8 +1029,12 @@ function update(dt){
   shakeT=Math.max(0,shakeT-dt);
   parryCooldown=Math.max(0,parryCooldown-dt);
   parryFlash=Math.max(0,parryFlash-dt*3);
+  spinCD=Math.max(0,spinCD-dt);
+  strikeCD=Math.max(0,strikeCD-dt);
   for(const s of shockwaves){s.r+=(s.max-s.r)*dt*8;s.life-=dt*1.6}
   shockwaves=shockwaves.filter(s=>s.life>0);
+  for(const sl of slashes)sl.life-=dt*2;
+  slashes=slashes.filter(s=>s.life>0);
 
   for(const b of birds){
     b.x+=b.vx*dt*60;
@@ -859,7 +1046,7 @@ function update(dt){
       if(Math.abs(dx)<130)b.x+=Math.sign(dx)*25*dt;
     }
 
-    if(vy<=0&&Math.abs(y-b.h)<11&&Math.abs(x-b.x)<52)landBird(b);
+    if(!bossMode&&vy<=0&&Math.abs(y-b.h)<11&&Math.abs(x-b.x)<52)landBird(b);
   }
 
   if(!practice&&height>10&&Math.random()<dt*.05)addMoney(Math.max(1,height*.04));
@@ -875,6 +1062,32 @@ function update(dt){
       fireballTimer=gap;
     }
   }
+  // Boss fight logic (mouth summons meteors - strike with R!)
+  if(bossMode){
+    bossT+=dt;mouthT+=dt;
+    bossX=W/2+Math.sin(bossT*.7)*140;
+    if(!mouthOpen&&mouthT>2.2){
+      mouthOpen=true;mouthT=0;playTone(90,.5,"sawtooth",.2);
+      shakeT=Math.max(shakeT,.4);
+      const n=3+Math.floor(Math.random()*3);
+      for(let i=0;i<n&&fireballs.length<10;i++)
+        fireballs.push({x:bossX+(Math.random()-.5)*140,y:60,vx:0,vy:0,type:"fire",speed:260+Math.random()*120,r:13+Math.random()*8,life:8,flicker:Math.random()*6});
+      toast("👹 IT SUMMONS METEORS! Press R!");
+    }
+    if(mouthOpen&&mouthT>1.6){mouthOpen=false;mouthT=0}
+    if(bossKills>=30)startWin();
+  }
+  if(spinT>0){
+    spinT-=dt;
+    const px=W/2+x,py=screenY(y);
+    for(const f of fireballs){
+      if(f.life>0&&Math.hypot(px-f.x,py-f.y)<240){
+        f.life=0;boom(f.x,f.y,20);addMoney(100);combo++;if(combo>maxCombo)maxCombo=combo;
+        if(bossMode){bossKills++;comboPopup(bossKills+"/30")}
+      }
+    }
+  }
+  swordAng+=dt*(spinT>0?10:3);
   updateFireballs(dt);
 
   for(const p of particles){
@@ -885,6 +1098,30 @@ function update(dt){
 }
 
 function drawSky(){
+  if(village){
+    // Burning-village sky: ember dark top, molten horizon
+    const vg=ctx.createLinearGradient(0,0,0,H);
+    vg.addColorStop(0,"#160400");vg.addColorStop(.6,"#7a1e00");vg.addColorStop(1,"#ff6a00");
+    ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+    const t=performance.now()*.001;
+    for(let i=0;i<50;i++){
+      const ex=(i*137+t*30)%W,ey=H-((i*89+t*70)%(H+100))+50;
+      ctx.globalAlpha=.4+.6*Math.abs(Math.sin(t*3+i));
+      ctx.fillStyle=i%3?"#ff8833":"#ffcc33";
+      ctx.fillRect(ex,ey,3,3);
+    }
+    ctx.globalAlpha=1;
+    ctx.fillStyle="rgba(60,10,0,.8)";
+    for(const c of clouds){
+      let cy=(c.y-cameraY*.08)%(H+160);if(cy<-80)cy+=H+160;
+      ctx.beginPath();
+      ctx.arc(c.x,cy,c.s*.45,0,7);
+      ctx.arc(c.x+c.s*.4,cy-10,c.s*.55,0,7);
+      ctx.arc(c.x+c.s*.85,cy,c.s*.4,0,7);
+      ctx.fill();
+    }
+    return;
+  }
   const g=ctx.createLinearGradient(0,0,0,H);
   const t=Math.min(height/10000,1);
   g.addColorStop(0,`rgb(${70-40*t},${180-100*t},${255-80*t})`);
@@ -903,6 +1140,31 @@ function drawSky(){
 }
 function drawWorld(){
   const gy=groundY();
+  if(village){
+    // Charred ground with glowing cracks + burning houses
+    ctx.fillStyle="#241009";ctx.fillRect(0,gy,W,H-gy);
+    ctx.fillStyle="#ff5a00";ctx.fillRect(0,gy,W,5);
+    ctx.strokeStyle="rgba(255,120,0,.8)";ctx.lineWidth=3;
+    const t=performance.now()*.001;
+    for(let i=0;i<8;i++){
+      const cx=((i*173+t*20)%(W+100))-50;
+      ctx.beginPath();ctx.moveTo(cx,gy+20);ctx.lineTo(cx+30,gy+45);ctx.lineTo(cx+10,gy+70);ctx.stroke();
+    }
+    for(let k=0;k<4;k++){
+      const hx=60+k*((W-120)/3),by=gy;
+      ctx.fillStyle="#0d0d0d";
+      ctx.fillRect(hx-30,by-52,60,52);
+      ctx.beginPath();ctx.moveTo(hx-36,by-52);ctx.lineTo(hx,by-84);ctx.lineTo(hx+36,by-52);ctx.fill();
+      ctx.fillStyle=`rgba(255,${100+Math.floor(Math.sin(t*9+hx)*60)},0,.9)`;
+      ctx.fillRect(hx-9,by-38,18,18);
+      for(let i=0;i<4;i++){
+        const fx=hx-28+i*18,fl=20+Math.sin(t*7+i*1.7+hx)*9;
+        ctx.fillStyle=i%2?"#ff6611":"#ffcc33";
+        ctx.beginPath();ctx.moveTo(fx,by-52);ctx.quadraticCurveTo(fx+6,by-52-fl,fx+12,by-52);ctx.fill();
+      }
+    }
+    return;
+  }
   ctx.fillStyle="#4da64d";ctx.fillRect(0,gy,W,H-gy);
   ctx.fillStyle="#80512e";ctx.fillRect(0,gy,W,8);
 
@@ -1030,12 +1292,15 @@ function drawBird(b){
   ctx.restore();
 }
 function draw(){
+  if(cinema){drawCinema();return}
   drawSky();drawWorld();
   for(const b of birds)drawBird(b);
   drawPlayer();
 
   // Draw fireballs
   for(const f of fireballs)drawFireball(f);
+  drawSwords();drawSlashes();
+  if(bossMode)drawBoss();
 
   // Warning markers so fireballs can't sneak up on you
   for(const f of fireballs){
@@ -1122,6 +1387,13 @@ function draw(){
     vg3.addColorStop(0,"rgba(4,0,14,0)");
     vg3.addColorStop(1,`rgba(0,0,5,${Math.min(.9,dd*1.6)})`);
     ctx.fillStyle=vg3;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Whiteout past 50,000m (swords zone)
+  if(!village&&!bossMode&&height>=50000){
+    const w=Math.min(.75,(height-50000)/8000);
+    ctx.fillStyle=`rgba(255,255,255,${w})`;
     ctx.fillRect(0,0,W,H);
   }
 
