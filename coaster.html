@@ -173,7 +173,13 @@ const COASTERS=[
   pts:[[0,3,20],[0,3,2],[0,6,-16],[0,10,-34],[6,9,-50],[-2,8,-64],[-10,7,-78],[-4,6,-92],[4,6,-106],[12,5,-118],[6,4,-132],[-4,4,-146],[-12,4,-160],[-6,5,-174],[2,6,-186],[10,5,-196],[18,4,-204],[26,3,-200],[30,3,-180],[30,3,-140],[30,3,-100],[30,3,-60],[28,3,-30],[26,3,0],[26,3,25],[26,3,45]]},
  {id:"kid",name:"Junior Cruiser",type:"FAMILY • GENTLE",thrill:"★★☆☆☆",inv:0,
   desc:"A gentle scenic ride for the little ones. Slow, smooth, no surprises.",
-  pts:[[0,2.5,14],[0,2.5,0],[0,2.5,-20],[0,3.5,-42],[0,3.5,-62],[2,3,-80],[8,2.5,-92],[16,2.5,-98],[22,2.5,-94],[25,2.5,-84],[25,2.5,-62],[23,2.5,-40],[21,2.5,-18],[20,2.5,2],[20,2.5,20]]}
+  pts:[[0,2.5,14],[0,2.5,0],[0,2.5,-20],[0,3.5,-42],[0,3.5,-62],[2,3,-80],[8,2.5,-92],[16,2.5,-98],[22,2.5,-94],[25,2.5,-84],[25,2.5,-62],[23,2.5,-40],[21,2.5,-18],[20,2.5,2],[20,2.5,20]]},
+ {id:"toro",name:"El Toro",type:"WOODEN • AIRTIME BEAST",thrill:"★★★★★",lift:13,
+  desc:"Relentless wooden twister: 76-degree first drop, ejector-airtime camelbacks, savage S-turns.",
+  pts:[[0,3,20],[0,3,2],[0,8,-16],[0,20,-36],[0,32,-58],[0,40,-78],[0,24,-90],[0,6,-102],[0,4,-116],[0,16,-132],[0,6,-148],[0,13,-162],[0,5,-176],[0,10,-188],[0,4,-200],[10,4,-212],[20,5,-218],[28,4,-212],[34,3,-200],[34,3,-180],[34,6,-160],[34,4,-140],[34,7,-120],[34,4,-100],[34,3,-70],[34,3,-40],[34,3,-10],[34,3,20],[34,3,45]]},
+ {id:"ka",name:"Kingda Ka",type:"LAUNCH • STRATA COASTER",thrill:"★★★★★",launch:{until:130,target:62},
+  desc:"Hydraulic launch to 200 km/h straight up a 139m top hat, then a 90-degree straight-down drop.",
+  pts:[[0,3,20],[0,3,2],[0,3,-20],[0,3,-40],[0,3,-60],[0,8,-80],[0,30,-95],[0,70,-105],[0,110,-112],[0,139,-118],[0,142,-126],[0,138,-134],[0,100,-142],[0,50,-148],[0,10,-154],[0,4,-165],[4,4,-178],[12,5,-188],[24,4,-192],[30,3,-182],[30,3,-140],[30,3,-100],[30,3,-60],[30,3,-20],[30,3,10],[30,3,40]]}
 ];
 // programmatic inversions
 (function(){
@@ -224,7 +230,7 @@ function computeTrack(def){
   // lift-hill end = first big peak (for chain-lift zone)
   let peakI=0;for(let i=0;i<N*.35;i++)if(spaced[i].y>spaced[peakI].y)peakI=i;
   const built={group:null,spaced,T,UP,SIDE,L,ds,N,sLift:peakI*ds,
-    maxH:Math.max(...spaced.map(p=>p.y)),len:L,isWood:def.id==="twist",id:def.id};
+    maxH:Math.max(...spaced.map(p=>p.y)),len:L,isWood:["twist","toro"].includes(def.id),id:def.id,lift:def.lift||9,launch:def.launch||null};
   // inversions: count transitions into upside-down
   let inv=0,wasUp=true;
   for(let i=0;i<=N;i+=10){const u=UP[i].y<0;if(u&&wasUp){inv++;wasUp=false}if(!u)wasUp=true}
@@ -244,7 +250,9 @@ function buildMeshes(built){
     cork:{rail:0x2255cc,sup:0xf2f2f2},
     hyper:{rail:0xffb300,sup:0xeeeeee},
     twist:{rail:0x8a5a2b,sup:0x6b4a2b},
-    kid:{rail:0x22aa55,sup:0xeeeeee}
+    kid:{rail:0x22aa55,sup:0xeeeeee},
+    toro:{rail:0x7a4a22,sup:0x5d3d1c},
+    ka:{rail:0xe8e8e8,sup:0x999999}
   };
   const SCH=SCHEMES[built.id]||SCHEMES.loop;
   const railM=new THREE.MeshLambertMaterial({color:SCH.rail});
@@ -401,6 +409,7 @@ function startRide(def){
   }catch(err){alert("Couldn't load this coaster: "+err.message);return}
   s=3*3.4;v=0;rideT=0;bank=0;maxG=0;maxV=0;camSnap=true;gSmooth=1;$("done").style.display="none";
   train.forEach(t=>t.visible=true);
+  if(def.launch){tone(80,1400,3,"sawtooth",.18);setTimeout(()=>tone(60,300,2.5,"square",.12),200)}
   riding=true;
   $("menu").classList.add("hidden");
 }
@@ -437,6 +446,7 @@ function loop(now){
     // idle: slow orbit around park
     const t=now*.00005;
     camera.position.set(Math.sin(t)*90,35,Math.cos(t)*90-100);
+    camera.up.set(0,1,0);
     camera.lookAt(0,8,-110);
     renderer.render(scene,camera);return;
   }
@@ -446,7 +456,8 @@ function loop(now){
   for(let st=0;st<steps;st++){
     dyds=slopeAt(s);
     v+=(-9.81*dyds-0.02*v-0.3)*h;
-    if(s<built.sLift)v=Math.max(v,9);      // chain lift
+    if(s<built.sLift)v=Math.max(v,built.lift);      // chain/cable lift
+    if(built.launch&&s<built.launch.until)v+=(built.launch.target-v)*Math.min(1,dt*0.9); // hydraulic launch
     v=Math.max(4,Math.min(40,v));if(v>maxV)maxV=v; // no rollback, calmer top speed
     s=(s+v*h)%built.L;
   }
@@ -488,6 +499,8 @@ function loop(now){
     _ta.copy(_p).addScaledVector(_t,-10-v*.15).addScaledVector(_up,4.5);
     _tl.copy(_p).addScaledVector(_up,1).addScaledVector(_t,6);
   }
+  _x.copy(_up).applyAxisAngle(_t,bank);
+  camera.up.copy(camMode===0?_x:_y.set(0,1,0)); // roll with the track in first person
   if(camSnap){camP.copy(_ta);camL.copy(_tl);camSnap=false}
   camP.lerp(_ta,1-Math.exp(-dt*7));
   if(camP.y<1)camP.y=1; // never clip under the ground
