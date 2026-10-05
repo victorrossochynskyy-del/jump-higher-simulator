@@ -110,7 +110,7 @@ canvas{touch-action:none}
       <button id="wipeBtn" style="flex:1;padding:12px;background:#c22;color:#fff">💥 WIPE ALL</button>
       <button id="restartBtn" style="flex:1;padding:12px;background:#2a7;color:#fff">🔄 RESTART ALL</button>
     </div>
-    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx</p>
+    <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx • /ban • /rename</p>
   </div>
 </div>
 <div id="controls">SPACE = JUMP • A/D = MOVE • S = FALL FASTER • J = JETPACK • F = PARRY • E = SHOP</div>
@@ -163,6 +163,21 @@ let myName=localStorage.getItem("jh_name")||"";
 if(!myName){myName="Player"+(1000+Math.floor(Math.random()*9000));try{localStorage.setItem("jh_name",myName)}catch(e){}}
 let scores={};
 let lastScorePub=0;
+const NET_MOD="jhsim/7f3a9c2e1b04/mod";
+let modList={}; // owner moderation: name(lower) -> {a:"ban"} or {a:"rename",to}
+function pubMod(){return netSend("mod",{list:modList},true,NET_MOD)}
+function applyMod(){
+  for(const k of Object.keys(scores)){
+    const r=modList[k];
+    if(!r)continue;
+    if(r.a==="ban")delete scores[k];
+    else if(r.a==="rename"&&r.to){const nk=String(r.to).slice(0,16);scores[nk.toLowerCase()]={name:nk,best:(scores[k].best||0),power:(scores[k].power||0),ts:Date.now(),mine:!!scores[k].mine};delete scores[k]}
+  }
+  const me=(myName||"").toLowerCase(),rule=modList[me];
+  if(rule&&rule.a==="ban"){myName="Player"+(1000+Math.floor(Math.random()*9000));try{localStorage.setItem("jh_name",myName)}catch(e){}lastScorePub=0;maybePublishScore(true);toast("⚠️ The owner reset your name")}
+  else if(rule&&rule.a==="rename"&&rule.to){myName=String(rule.to).slice(0,16);try{localStorage.setItem("jh_name",myName)}catch(e){}lastScorePub=0;maybePublishScore(true);toast("✏️ The owner renamed you to "+myName)}
+  try{if(!$("scores").classList.contains("hidden"))renderScores()}catch(e){}
+}
 function maybePublishScore(force){
   if(!netLive||!myName||!netClient||!(best>0))return;
   const now=Date.now();
@@ -188,12 +203,13 @@ function netInit(){
   let ui=0;
   try{
     netClient=mqtt.connect(urls[ui],{connectTimeout:8000,reconnectPeriod:5000,clientId:myNetId+"_"+Date.now().toString(36)});
-    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}try{netClient.subscribe(NET_SCORES+"/#")}catch(e){}maybePublishScore(true);netDot()});
+    netClient.on("connect",()=>{netLive=true;try{netClient.subscribe(NET_TOPIC)}catch(e){}try{netClient.subscribe(NET_SCORES+"/#")}catch(e){}try{netClient.subscribe(NET_MOD)}catch(e){}maybePublishScore(true);netDot()});
     netClient.on("reconnect",()=>{ui=(ui+1)%urls.length});
     netClient.on("close",()=>{netLive=false;netDot()});
     netClient.on("error",()=>{});
     netClient.on("message",(t,buf)=>{
       let m;try{m=JSON.parse(buf.toString())}catch(e){return}
+      if(t===NET_MOD){if(m&&m.key===NET_KEY&&m.list){modList=m.list||{};applyMod()}return}
       if(t.indexOf(NET_SCORES)===0){
         const nm=m&&m.name?String(m.name).slice(0,16):"";
         if(nm){
@@ -208,9 +224,9 @@ function netInit(){
     });
   }catch(e){}
 }
-function netSend(cmd,obj){
+function netSend(cmd,obj,retain,topic){
   if(!netClient||!netLive)return false;
-  try{netClient.publish(NET_TOPIC,JSON.stringify(Object.assign({v:1,from:myNetId,key:NET_KEY,cmd:cmd},obj||{})));return true}
+  try{netClient.publish(topic||NET_TOPIC,JSON.stringify(Object.assign({v:1,from:myNetId,key:NET_KEY,cmd:cmd},obj||{})),{retain:!!retain});return true}
   catch(e){return false}
 }
 function netApply(m){
@@ -573,6 +589,9 @@ $("adminInput").addEventListener("keydown",e=>{
   else if(cmd==="/music"){const t=(arg||"").trim().toLowerCase();const ok=!!TRACKS[t];startMusic(ok?t:"off");const sent=netSend("music",{track:ok?t:"off"});adminSay(ok?("🎵 Playing "+t+(sent?" for everyone!":" (local only)")):"Music stopped. Tracks: adventure, chill, boss, victory")}
   else if(cmd==="/fx"){const k=(arg||"").trim().toLowerCase();const kk=["fireworks","confetti","shake"].includes(k)?k:"fireworks";fxBurst(kk);const sent=netSend("fx",{kind:kk});adminSay("✨ "+kk+"!"+(sent?" (everyone sees it!)":" (local only)"))}
   else if(cmd==="/fly"){y=parseFloat(arg)||0;vy=0;adminSay("Teleported to "+arg+"m")}
+  else if(cmd==="/ban"){const t=(arg||"").trim().toLowerCase();if(t){modList[t]={a:"ban"};delete scores[t];pubMod();try{if(!$("scores").classList.contains("hidden"))renderScores()}catch(e){}adminSay("🚫 Banned "+t+" from the board")}else adminSay("Usage: /ban name")}
+  else if(cmd==="/unban"){const t=(arg||"").trim().toLowerCase();if(modList[t]){delete modList[t];pubMod();adminSay("✅ Unbanned "+t)}else adminSay(t+" is not banned")}
+  else if(cmd==="/rename"){const p=(arg||"").trim().split(/\s+/);const old=(p[0]||"").toLowerCase(),nw=(p[1]||"").slice(0,16);if(old&&nw){modList[old]={a:"rename",to:nw};applyMod();pubMod();adminSay("✏️ "+old+" → "+nw)}else adminSay("Usage: /rename oldname newname")}
   else if(cmd==="/pass"&&arg){adminPass=arg;localStorage.setItem("jh_pass",arg);adminSay("Password changed")}
   else{const msg=v[0]==="/"?v.slice(1).trim():v;bigAnnounce(msg||v);playMilestoneSound();const sent=netSend("announce",{text:msg||v});adminSay("Announced: "+(msg||v)+(sent?" (sent to everyone!)":" (offline - local only)"))}
 });
