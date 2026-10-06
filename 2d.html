@@ -110,6 +110,7 @@ canvas{touch-action:none}
       <button id="wipeBtn" style="flex:1;padding:12px;background:#c22;color:#fff">💥 WIPE ALL</button>
       <button id="restartBtn" style="flex:1;padding:12px;background:#2a7;color:#fff">🔄 RESTART ALL</button>
     </div>
+    <button id="logoutAdmin" style="width:100%;margin-top:8px;padding:10px;background:#405779;color:#fff">LOG OUT (lock panel)</button>
     <p style="font-size:11px">Just type to announce • /money n • /power n • /combo n • /clear • /fly n • /pass newpass • /restart • /wipe • /music • /fx • /ban • /rename • /powerreset</p>
   </div>
 </div>
@@ -581,6 +582,7 @@ $("adminBtn").onclick=()=>{
   $("admin").classList.remove("hidden");renderAdminLog();
 };
 $("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
+$("logoutAdmin").onclick=()=>{isAdmin=false;try{localStorage.removeItem("jh_admin")}catch(e){}$("admin").classList.add("hidden");toast("Logged out — password required next time")};
 $("scoresBtn").onclick=()=>{$("scores").classList.remove("hidden");maybePublishScore(true);renderScores()};
 $("closeScores").onclick=()=>$("scores").classList.add("hidden");
 $("saveName").onclick=()=>{
