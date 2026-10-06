@@ -494,7 +494,8 @@ $("practiceBtn").onclick=()=>{
 
 // ---- Owner admin panel ----
 let isAdmin=localStorage.getItem("jh_admin")==="1";
-let adminPass=localStorage.getItem("jh_pass")||"Victor225!";
+const DEFAULT_PASS="Victor225!";
+let adminPass=localStorage.getItem("jh_pass")||DEFAULT_PASS;
 let wipeArmed=0;
 // ---- Admin music: tiny chiptune sequencer ----
 const TRACKS={
@@ -570,8 +571,13 @@ $("adminBtn").onclick=()=>{
   if(!isAdmin){
     const p=prompt("Enter owner password:");
     if(p===adminPass){isAdmin=true;localStorage.setItem("jh_admin","1");toast("Welcome, owner!")}
+    else if(p!==null&&confirm("Wrong password. Reset it back to the default?")){
+      try{localStorage.removeItem("jh_pass");localStorage.removeItem("jh_admin")}catch(e){}
+      adminPass=DEFAULT_PASS;toast("Reset done — tap ADMIN and enter the default password");
+    }
     else{toast("Wrong password!");return}
   }
+  if(!isAdmin)return;
   $("admin").classList.remove("hidden");renderAdminLog();
 };
 $("closeAdmin").onclick=()=>$("admin").classList.add("hidden");
