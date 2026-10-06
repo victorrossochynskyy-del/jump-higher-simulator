@@ -555,7 +555,7 @@ function loop(now){
     _tl.copy(_p).addScaledVector(_up,1.5);
     camera.up.set(0,1,0); // dead level horizon on the straight
   }else if(camMode===0){
-    _ta.copy(_tb);
+    _ta.copy(_p).addScaledVector(_t,3).addScaledVector(_up,2.1); // front-seat POV, just ahead of the nose
     _tl.copy(_p).addScaledVector(_t,lookDist).addScaledVector(_up,.5);
   }else{
     _ta.copy(_p).addScaledVector(_t,-10-v*.15).addScaledVector(_up,4.5);
@@ -563,11 +563,11 @@ function loop(now){
   }
   _x.copy(_up).applyAxisAngle(_t,bank);
   camera.up.copy(camMode===0?_x:_y.set(0,1,0)); // roll with the track in first person
+  const fpView=!inLaunchView&&camMode===0;
   if(camSnap){camP.copy(_ta);camL.copy(_tl);camSnap=false}
-  camP.lerp(_ta,1-Math.exp(-dt*7));
-  if(camP.y<1)camP.y=1; // never clip under the ground
+  if(fpView)camera.position.copy(_ta); // rigid front-seat mount, like a real POV camera
+  else{camP.lerp(_ta,1-Math.exp(-dt*7));if(camP.y<1)camP.y=1;camera.position.copy(camP)}
   camL.lerp(_tl,1-Math.exp(-dt*10));
-  camera.position.copy(camP);
   camera.lookAt(camL);
   // launch staging banner
   const lm=$("launchMsg");
